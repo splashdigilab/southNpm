@@ -549,41 +549,8 @@ const GPS_DENIED_MESSAGE = '需要開啟定位權限才能上傳大螢幕。<br>
 const GPS_OUTSIDE_MESSAGE = '您目前不在合法上傳區域內，請移動到店內指定範圍後再試。'
 /** 設為 false 時略過上傳前 GPS／地理柵欄驗證 */
 const ENABLE_GPS_VALIDATION = false
-const TOKEN_DISABLED_SUBMIT_COOLDOWN_MS = 3 * 60 * 1000
-const TOKEN_DISABLED_LAST_SUBMIT_AT_KEY = 'willmusic_token_disabled_last_submit_at'
 const tokenRequiredForSubmit = ref(false)
 let unsubTokenRequirement: (() => void) | null = null
-
-const getTokenDisabledRemainingCooldownMs = (): number => {
-  if (typeof window === 'undefined') return 0
-  try {
-    const raw = localStorage.getItem(TOKEN_DISABLED_LAST_SUBMIT_AT_KEY)
-    const lastSubmitAt = Number(raw)
-    if (!Number.isFinite(lastSubmitAt) || lastSubmitAt <= 0) return 0
-    const elapsed = Date.now() - lastSubmitAt
-    return Math.max(0, TOKEN_DISABLED_SUBMIT_COOLDOWN_MS - elapsed)
-  } catch {
-    return 0
-  }
-}
-
-const formatCooldownRemaining = (remainingMs: number): string => {
-  const totalSeconds = Math.max(1, Math.ceil(remainingMs / 1000))
-  const minutes = Math.floor(totalSeconds / 60)
-  const seconds = totalSeconds % 60
-  if (minutes <= 0) return `${seconds} 秒`
-  if (seconds <= 0) return `${minutes} 分鐘`
-  return `${minutes} 分 ${seconds} 秒`
-}
-
-const saveTokenDisabledSubmitTimestamp = () => {
-  if (typeof window === 'undefined') return
-  try {
-    localStorage.setItem(TOKEN_DISABLED_LAST_SUBMIT_AT_KEY, String(Date.now()))
-  } catch {
-    // ignore storage write errors
-  }
-}
 
 const isSharing = ref(false)
 const showExportNode = ref(false)  // 控制 1080px export node 的掛載時機
@@ -885,18 +852,6 @@ const openSubmitModal = () => {
     return
   }
 
-  if (!tokenRequiredForSubmit.value) {
-    const remainingCooldownMs = getTokenDisabledRemainingCooldownMs()
-    if (remainingCooldownMs > 0) {
-      showAlert(
-        `每次上傳後需等待 3 分鐘。請於 ${formatCooldownRemaining(remainingCooldownMs)} 後再試。`,
-        '上傳冷卻中',
-        '⏱️'
-      )
-      return
-    }
-  }
-
   const token = loadToken()
   if (tokenRequiredForSubmit.value && !token) {
     showAlert(TOKEN_ALERT_MESSAGE, TOKEN_ALERT_TITLE, TOKEN_ALERT_ICON)
@@ -1077,19 +1032,6 @@ const validateGeoFenceBeforeSubmit = async (): Promise<boolean> => {
 const confirmSubmit = async () => {
   if (isSubmitting.value) return
 
-  if (!tokenRequiredForSubmit.value) {
-    const remainingCooldownMs = getTokenDisabledRemainingCooldownMs()
-    if (remainingCooldownMs > 0) {
-      showSubmitModal.value = false
-      showAlert(
-        `每次上傳後需等待 3 分鐘。請於 ${formatCooldownRemaining(remainingCooldownMs)} 後再試。`,
-        '上傳冷卻中',
-        '⏱️'
-      )
-      return
-    }
-  }
-
   const tokenForSubmit = tokenRequiredForSubmit.value ? (loadToken() || undefined) : undefined
   if (tokenRequiredForSubmit.value && !tokenForSubmit) {
     showAlert(TOKEN_ALERT_MESSAGE, TOKEN_ALERT_TITLE, TOKEN_ALERT_ICON)
@@ -1186,9 +1128,6 @@ const confirmSubmit = async () => {
 
     // 上傳成功：清除草稿與快取的 Token
     clearDraft()
-    if (!tokenRequiredForSubmit.value) {
-      saveTokenDisabledSubmitTimestamp()
-    }
     if (tokenRequiredForSubmit.value && tokenForSubmit) {
       clearToken() // 將 SessionStorage 中的 Token 刪除
     }
