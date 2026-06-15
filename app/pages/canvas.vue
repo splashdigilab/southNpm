@@ -207,10 +207,14 @@ function recomputeSlots() {
   const scale = Math.min((zoneW / virtualW) || 1, (zoneH / virtualH) || 1)
   const size = Math.max(40, itemSize * scale)
 
+  // 等比縮放後，較寬鬆的軸會剩餘空白；置中以免整體偏向左上
+  const offsetX = (zoneW - virtualW * scale) / 2
+  const offsetY = (zoneH - virtualH * scale) / 2
+
   const prevRot = slots.value.map(s => s.rot)
   const next: Slot[] = positions.map((p, i) => {
-    const cx = (p.x - minX) * scale
-    const cy = (p.y - minY) * scale
+    const cx = (p.x - minX) * scale + offsetX
+    const cy = (p.y - minY) * scale + offsetY
     return {
       left: Math.max(0, Math.min(cx - size / 2, zoneW - size)) + PADDING,
       top: Math.max(0, Math.min(cy - size / 2, zoneH - size)) + PADDING,
@@ -463,82 +467,3 @@ onUnmounted(() => {
   document.body.style.overflow = ''
 })
 </script>
-
-<style scoped>
-.p-wall {
-  position: fixed;
-  inset: 0;
-  overflow: hidden;
-  background: #000;
-}
-
-/* 固定 445:250 比例的舞台：在不超出螢幕的前提下盡量放大並置中 */
-.p-wall__stage {
-  position: absolute;
-  inset: 0;
-  margin: auto;
-  width: min(100vw, 100vh * 445 / 250);
-  aspect-ratio: 445 / 250;
-  max-width: 100vw;
-  max-height: 100vh;
-  overflow: hidden;
-  background: #fff url('/canvasBg.png') center / cover no-repeat;
-}
-
-.p-wall__zone {
-  position: absolute;
-  inset: 0;
-}
-
-.p-wall__slot {
-  position: absolute;
-}
-
-.p-wall__note {
-  position: absolute;
-  inset: 0;
-  will-change: transform, opacity;
-}
-
-.p-wall__note-inner {
-  position: absolute;
-  inset: 0;
-  transform-origin: center center;
-}
-
-/* 淡入/淡出：皆為「往上位移 + 透明度」，不做橫向飛行 */
-.note-up-enter-active,
-.note-up-leave-active {
-  transition: opacity 0.9s ease, transform 0.9s ease;
-}
-/* 最新：自下方往上淡入 */
-.note-up-enter-from {
-  opacity: 0;
-  transform: translateY(48px);
-}
-/* 最舊：原位往上淡出 */
-.note-up-leave-to {
-  opacity: 0;
-  transform: translateY(-48px);
-}
-/* 離場期間絕對定位，與進場者重疊在同一格位 crossfade */
-.note-up-leave-active {
-  position: absolute;
-  inset: 0;
-}
-
-.p-wall__interstitial {
-  position: fixed;
-  inset: 0;
-  z-index: 100;
-  background: #000;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-}
-.p-wall__interstitial-video {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-}
-</style>
