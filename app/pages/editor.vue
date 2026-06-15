@@ -448,7 +448,11 @@ const selectedFontUrl = computed(() => selectedFontId.value ? getFontUrl(selecte
 const getFontsOnScreen = async (): Promise<Set<string>> => {
   const used = new Set<string>()
   try {
-    const snap = await getDoc(doc(db, 'system', 'current_state'))
+    // 加上 timeout：離線/弱網時 getDoc 可能長時間不回應，不能讓它卡住描紅底圖的顯示
+    const snap = await Promise.race([
+      getDoc(doc(db, 'system', 'current_state')),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('current_state timeout')), 2500))
+    ])
     if (snap.exists()) {
       const data = snap.data() as any
       const items: any[] = [
@@ -467,12 +471,28 @@ const getFontsOnScreen = async (): Promise<Set<string>> => {
   return used
 }
 
-/** 隨機挑一張字帖，盡量避開螢幕上已有的字；若全用完則退回完全隨機 */
+/** 純隨機挑一張字帖 */
+const pickRandomFont = (): string | null => {
+  const pool = FONT_LIST as readonly string[]
+  return pool[Math.floor(Math.random() * pool.length)] ?? null
+}
+
+/**
+ * 隨機挑一張字帖，盡量避開螢幕上已有的字。
+ * 重點：先立刻挑一張並顯示（描紅底圖一定會出現，不被 Firestore 延遲卡住），
+ * 之後再讀取 LED 牆上已用字；只有在「剛好撞到已用字」時才換一張，避免無謂的閃動。
+ */
 const pickUniqueFont = async () => {
+  const initial = pickRandomFont()
+  selectedFontId.value = initial
+
   const used = await getFontsOnScreen()
-  const available = FONT_LIST.filter(id => !used.has(id))
-  const pool = available.length > 0 ? available : (FONT_LIST as readonly string[])
-  selectedFontId.value = pool[Math.floor(Math.random() * pool.length)] ?? null
+  if (initial && used.has(initial)) {
+    const available = FONT_LIST.filter(id => !used.has(id))
+    if (available.length > 0) {
+      selectedFontId.value = available[Math.floor(Math.random() * available.length)] ?? initial
+    }
+  }
 }
 
 // 每個物件（貼紙）各自疊放順序：點選時 bringToFront，完成後該物件維持最頂層
@@ -549,8 +569,41 @@ const GPS_DENIED_MESSAGE = '需要開啟定位權限才能上傳大螢幕。<br>
 const GPS_OUTSIDE_MESSAGE = '您目前不在合法上傳區域內，請移動到店內指定範圍後再試。'
 /** 設為 false 時略過上傳前 GPS／地理柵欄驗證 */
 const ENABLE_GPS_VALIDATION = false
+const TOKEN_DISABLED_SUBMIT_COOLDOWN_MS = 1 * 60 * 1000
+const TOKEN_DISABLED_LAST_SUBMIT_AT_KEY = 'willmusic_token_disabled_last_submit_at'
 const tokenRequiredForSubmit = ref(false)
 let unsubTokenRequirement: (() => void) | null = null
+
+const getTokenDisabledRemainingCooldownMs = (): number => {
+  if (typeof window === 'undefined') return 0
+  try {
+    const raw = localStorage.getItem(TOKEN_DISABLED_LAST_SUBMIT_AT_KEY)
+    const lastSubmitAt = Number(raw)
+    if (!Number.isFinite(lastSubmitAt) || lastSubmitAt <= 0) return 0
+    const elapsed = Date.now() - lastSubmitAt
+    return Math.max(0, TOKEN_DISABLED_SUBMIT_COOLDOWN_MS - elapsed)
+  } catch {
+    return 0
+  }
+}
+
+const formatCooldownRemaining = (remainingMs: number): string => {
+  const totalSeconds = Math.max(1, Math.ceil(remainingMs / 1000))
+  const minutes = Math.floor(totalSeconds / 60)
+  const seconds = totalSeconds % 60
+  if (minutes <= 0) return `${seconds} 秒`
+  if (seconds <= 0) return `${minutes} 分鐘`
+  return `${minutes} 分 ${seconds} 秒`
+}
+
+const saveTokenDisabledSubmitTimestamp = () => {
+  if (typeof window === 'undefined') return
+  try {
+    localStorage.setItem(TOKEN_DISABLED_LAST_SUBMIT_AT_KEY, String(Date.now()))
+  } catch {
+    // ignore storage write errors
+  }
+}
 
 const isSharing = ref(false)
 const showExportNode = ref(false)  // 控制 1080px export node 的掛載時機
@@ -852,6 +905,18 @@ const openSubmitModal = () => {
     return
   }
 
+  if (!tokenRequiredForSubmit.value) {
+    const remainingCooldownMs = getTokenDisabledRemainingCooldownMs()
+    if (remainingCooldownMs > 0) {
+      showAlert(
+        `每次上傳後需等待 1 分鐘。請於 ${formatCooldownRemaining(remainingCooldownMs)} 後再試。`,
+        '上傳冷卻中',
+        '⏱️'
+      )
+      return
+    }
+  }
+
   const token = loadToken()
   if (tokenRequiredForSubmit.value && !token) {
     showAlert(TOKEN_ALERT_MESSAGE, TOKEN_ALERT_TITLE, TOKEN_ALERT_ICON)
@@ -1032,6 +1097,19 @@ const validateGeoFenceBeforeSubmit = async (): Promise<boolean> => {
 const confirmSubmit = async () => {
   if (isSubmitting.value) return
 
+  if (!tokenRequiredForSubmit.value) {
+    const remainingCooldownMs = getTokenDisabledRemainingCooldownMs()
+    if (remainingCooldownMs > 0) {
+      showSubmitModal.value = false
+      showAlert(
+        `每次上傳後需等待 1 分鐘。請於 ${formatCooldownRemaining(remainingCooldownMs)} 後再試。`,
+        '上傳冷卻中',
+        '⏱️'
+      )
+      return
+    }
+  }
+
   const tokenForSubmit = tokenRequiredForSubmit.value ? (loadToken() || undefined) : undefined
   if (tokenRequiredForSubmit.value && !tokenForSubmit) {
     showAlert(TOKEN_ALERT_MESSAGE, TOKEN_ALERT_TITLE, TOKEN_ALERT_ICON)
@@ -1128,6 +1206,9 @@ const confirmSubmit = async () => {
 
     // 上傳成功：清除草稿與快取的 Token
     clearDraft()
+    if (!tokenRequiredForSubmit.value) {
+      saveTokenDisabledSubmitTimestamp()
+    }
     if (tokenRequiredForSubmit.value && tokenForSubmit) {
       clearToken() // 將 SessionStorage 中的 Token 刪除
     }
@@ -1291,6 +1372,27 @@ const scalerStyle = ref({ transform: 'scale(1)' })
 const VIRTUAL_SIZE = 600
 let resizeObserver: ResizeObserver | null = null
 
+// 編輯器一定會用到的關鍵圖片：全部載入完成後才允許按「開始」。
+// 包含 CSS 背景（paper.webp）與尚未掛載到 DOM 的貼紙 SVG，這些都不會被 document.images 捕捉到。
+const EDITOR_ASSETS: string[] = [
+  '/paper.webp',
+  '/resetBtn.png',
+  ...EDITOR_TABS.map(t => t.bg),
+  ...STICKER_LIBRARY.map(s => s.svgFile)
+]
+
+// 預載單一圖片；無論成功或失敗都 resolve（失敗不擋使用者），已快取者立即完成。
+const preloadImage = (src: string) =>
+  new Promise<void>(resolve => {
+    const img = new Image()
+    img.onload = () => resolve()
+    img.onerror = () => resolve()
+    img.src = src
+    if (img.complete) resolve()
+  })
+
+const preloadEditorAssets = () => Promise.all(EDITOR_ASSETS.map(preloadImage))
+
 const checkInitialModals = async () => {
   await nextTick()
   // 檢查草稿（僅顯示 modal，不預先載入內容；等使用者選擇「使用草稿」才載入）
@@ -1352,10 +1454,16 @@ onMounted(async () => {
       document.fonts.ready,
       new Promise<void>(resolve => setTimeout(resolve, 5000))
     ])
+    // 編輯器關鍵圖片（背景、貼紙、tab、按鈕）全部載入才開放「開始」；
+    // 加 8 秒安全超時，避免單一資產載入失敗或弱網時永遠卡在載入中。
+    const assetsReady = Promise.race([
+      Promise.all([preloadEditorAssets(), waitForImages()]),
+      new Promise<void>(resolve => setTimeout(resolve, 8000))
+    ])
     await Promise.all([
       fontsReady,
       windowLoaded,
-      waitForImages(),
+      assetsReady,
       new Promise(resolve => setTimeout(resolve, 800))
     ])
   } catch (e) {
