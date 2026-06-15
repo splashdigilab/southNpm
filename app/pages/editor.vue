@@ -1,7 +1,7 @@
 <template>
   <div class="p-editor">
       <!-- Header -->
-      <AppHeader show-back show-help relative @back="goBack" @help="showTutorialModal = true" />
+      <AppHeader show-help relative @back="goBack" @help="showTutorialModal = true" />
 
       <!-- 活動介紹滿版 overlay：載入時顯示，loading 完後按「開始」關閉 -->
       <Transition name="intro-fade">

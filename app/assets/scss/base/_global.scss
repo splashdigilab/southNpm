@@ -25,6 +25,9 @@ body {
   -moz-osx-font-smoothing: grayscale;
   line-height: 1.5;
   color: #333;
+  // 停用瀏覽器原生的雙擊放大(double-tap-to-zoom),保留單擊/拖曳/雙指縮放。
+  // 畫布區自行設定的 touch-action(none / pan-*)會各自覆蓋,不受影響。
+  touch-action: manipulation;
 }
 
 #__nuxt,

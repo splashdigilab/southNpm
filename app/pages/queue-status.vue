@@ -26,8 +26,8 @@
 
       <!-- Actions -->
       <div class="p-queue-status-minimal__actions">
-        <NuxtLink to="/" class="p-queue-status-minimal__btn-home">
-          回到首頁
+        <NuxtLink to="/editor" class="p-queue-status-minimal__btn-home">
+          返回編輯器
         </NuxtLink>
       </div>
 
