@@ -113,9 +113,8 @@ const slotStyle = (slot: Slot) => ({
    ══════════════════════════════════════════════ */
 const PADDING = 40
 const VIRTUAL_ITEM_SIZE = 550
-const VIRTUAL_MARGIN = -50
-const VIRTUAL_COLLISION_RADIUS = (VIRTUAL_ITEM_SIZE * Math.SQRT2 + VIRTUAL_MARGIN) / 2
-const VIRTUAL_CELL_SIZE = VIRTUAL_COLLISION_RADIUS * 2
+/** 物件之間額外保留的間距（虛擬單位，>0 確保彼此不接觸） */
+const VIRTUAL_GAP = 30
 const SPIRAL_C = 35
 
 interface VPos { x: number; y: number }
@@ -123,10 +122,10 @@ interface VPos { x: number; y: number }
 function getGridKey(x: number, y: number, cell: number): string {
   return `${Math.floor(x / cell)},${Math.floor(y / cell)}`
 }
-function isColliding(pos: VPos, grid: Map<string, VPos[]>, cell: number): boolean {
+function isColliding(pos: VPos, grid: Map<string, VPos[]>, cell: number, radius: number): boolean {
   const cx = Math.floor(pos.x / cell)
   const cy = Math.floor(pos.y / cell)
-  const diamSq = (VIRTUAL_COLLISION_RADIUS * 2) ** 2
+  const diamSq = (radius * 2) ** 2
   for (let dx = -1; dx <= 1; dx++) {
     for (let dy = -1; dy <= 1; dy++) {
       const ns = grid.get(`${cx + dx},${cy + dy}`)
@@ -138,29 +137,37 @@ function isColliding(pos: VPos, grid: Map<string, VPos[]>, cell: number): boolea
   }
   return false
 }
-function calcVirtualPositions(count: number): VPos[] {
+/**
+ * 以 collisionRadius（便利貼外接圓半徑 + 半間距）做碰撞檢測；
+ * 任意旋轉角度的方形都被其外接圓涵蓋，故圓不重疊 ⇒ 方形必不重疊。
+ *
+ * aspect = 目標區域寬高比。螺旋點在「碰撞檢測前」即依此比例做等面積拉伸
+ * （x×√aspect、y÷√aspect），使最終只需等比縮放即可填滿區域、無需破壞
+ * 不重疊保證的非等比壓縮。
+ */
+function calcVirtualPositions(count: number, collisionRadius: number, aspect: number): VPos[] {
+  const cell = collisionRadius * 2
+  const sx = Math.sqrt(aspect)
+  const sy = 1 / sx
   const positions: VPos[] = []
   const grid = new Map<string, VPos[]>()
   let spiralIndex = 0
   for (let i = 0; i < count; i++) {
-    if (i === 0) {
-      const p = { x: 0, y: 0 }
-      positions.push(p)
-      grid.set(getGridKey(p.x, p.y, VIRTUAL_CELL_SIZE), [p])
-      spiralIndex++
-      continue
-    }
-    let found = false
     let cur: VPos = { x: 0, y: 0 }
-    while (!found) {
-      const r = SPIRAL_C * Math.sqrt(spiralIndex)
-      const theta = spiralIndex * 137.508 * (Math.PI / 180)
-      cur = { x: r * Math.cos(theta), y: r * Math.sin(theta) }
-      if (!isColliding(cur, grid, VIRTUAL_CELL_SIZE)) found = true
+    if (i > 0) {
+      let found = false
+      while (!found) {
+        const r = SPIRAL_C * Math.sqrt(spiralIndex)
+        const theta = spiralIndex * 137.508 * (Math.PI / 180)
+        cur = { x: r * Math.cos(theta) * sx, y: r * Math.sin(theta) * sy }
+        if (!isColliding(cur, grid, cell, collisionRadius)) found = true
+        spiralIndex++
+      }
+    } else {
       spiralIndex++
     }
     positions.push(cur)
-    const key = getGridKey(cur.x, cur.y, VIRTUAL_CELL_SIZE)
+    const key = getGridKey(cur.x, cur.y, cell)
     if (!grid.has(key)) grid.set(key, [])
     grid.get(key)!.push(cur)
   }
@@ -176,45 +183,29 @@ function recomputeSlots() {
   const zoneH = zone.clientHeight - PADDING * 2
   if (zoneW <= 0 || zoneH <= 0 || n <= 0) return
 
-  const positions = calcVirtualPositions(n)
+  // 便利貼實際佔位（含 noteScale），碰撞與邊界皆以此為準
+  const itemSize = VIRTUAL_ITEM_SIZE * noteScale.value
+  const collisionRadius = (itemSize * Math.SQRT2 + VIRTUAL_GAP) / 2
+  const positions = calcVirtualPositions(n, collisionRadius, zoneW / zoneH)
 
-  let minX = positions[0]!.x - VIRTUAL_ITEM_SIZE / 2
-  let maxX = positions[0]!.x + VIRTUAL_ITEM_SIZE / 2
-  let minY = positions[0]!.y - VIRTUAL_ITEM_SIZE / 2
-  let maxY = positions[0]!.y + VIRTUAL_ITEM_SIZE / 2
+  let minX = positions[0]!.x - itemSize / 2
+  let maxX = positions[0]!.x + itemSize / 2
+  let minY = positions[0]!.y - itemSize / 2
+  let maxY = positions[0]!.y + itemSize / 2
   for (let i = 1; i < positions.length; i++) {
     const p = positions[i]!
-    minX = Math.min(minX, p.x - VIRTUAL_ITEM_SIZE / 2)
-    maxX = Math.max(maxX, p.x + VIRTUAL_ITEM_SIZE / 2)
-    minY = Math.min(minY, p.y - VIRTUAL_ITEM_SIZE / 2)
-    maxY = Math.max(maxY, p.y + VIRTUAL_ITEM_SIZE / 2)
+    minX = Math.min(minX, p.x - itemSize / 2)
+    maxX = Math.max(maxX, p.x + itemSize / 2)
+    minY = Math.min(minY, p.y - itemSize / 2)
+    maxY = Math.max(maxY, p.y + itemSize / 2)
   }
 
-  let virtualW = maxX - minX
-  let virtualH = maxY - minY
-  const centerX = (minX + maxX) / 2
-  const centerY = (minY + maxY) / 2
-  const zoneAspect = zoneW / zoneH
-  const virtualAspect = virtualW / virtualH
+  const virtualW = maxX - minX
+  const virtualH = maxY - minY
 
-  if (virtualAspect > zoneAspect) {
-    const factor = (zoneW * virtualH) / (zoneH * virtualW)
-    for (const p of positions) p.x = centerX + (p.x - centerX) * factor
-    const halfW = (maxX - minX) / 2
-    minX = centerX - halfW * factor
-    maxX = centerX + halfW * factor
-    virtualW = maxX - minX
-  } else if (virtualAspect < zoneAspect) {
-    const factor = (zoneH * virtualW) / (zoneW * virtualH)
-    for (const p of positions) p.y = centerY + (p.y - centerY) * factor
-    const halfH = (maxY - minY) / 2
-    minY = centerY - halfH * factor
-    maxY = centerY + halfH * factor
-    virtualH = maxY - minY
-  }
-
+  // 點雲已預先拉伸成接近區域比例，僅做等比縮放即可填滿，不破壞不重疊保證
   const scale = Math.min((zoneW / virtualW) || 1, (zoneH / virtualH) || 1)
-  const size = Math.max(40, VIRTUAL_ITEM_SIZE * scale) * noteScale.value
+  const size = Math.max(40, itemSize * scale)
 
   const prevRot = slots.value.map(s => s.rot)
   const next: Slot[] = positions.map((p, i) => {

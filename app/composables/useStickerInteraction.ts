@@ -3,6 +3,11 @@ import type { StickerInstance } from '~/types'
 
 const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(min, v))
 
+// 貼紙拖曳允許超出畫布邊界的範圍（以畫布百分比為單位）
+// 保留少許邊界讓貼紙不會完全消失、仍可被選取拉回
+const DRAG_MIN = -40
+const DRAG_MAX = 140
+
 export interface UseStickerInteractionOptions {
   canvasRef: Ref<HTMLElement | null>
   stickers: Ref<StickerInstance[]>
@@ -63,8 +68,8 @@ export function useStickerInteraction(options: UseStickerInteractionOptions) {
       const deltaY = ((moveEvent.clientY - dragState.startY) / rect.height) * 100
       const s = stickers.value.find(st => st.id === dragState!.stickerId)
       if (s) {
-        s.x = clamp(dragState.initialX + deltaX, 5, 95)
-        s.y = clamp(dragState.initialY + deltaY, 5, 95)
+        s.x = clamp(dragState.initialX + deltaX, DRAG_MIN, DRAG_MAX)
+        s.y = clamp(dragState.initialY + deltaY, DRAG_MIN, DRAG_MAX)
       }
     }
 
@@ -108,8 +113,8 @@ export function useStickerInteraction(options: UseStickerInteractionOptions) {
         const deltaY = ((t.clientY - dragState.startY) / rect.height) * 100
         const s = stickers.value.find(st => st.id === dragState!.stickerId)
         if (s) {
-          s.x = clamp(dragState.initialX + deltaX, 5, 95)
-          s.y = clamp(dragState.initialY + deltaY, 5, 95)
+          s.x = clamp(dragState.initialX + deltaX, DRAG_MIN, DRAG_MAX)
+          s.y = clamp(dragState.initialY + deltaY, DRAG_MIN, DRAG_MAX)
         }
       }
     }
