@@ -64,6 +64,57 @@
   }
 }
 
+/*
+  卷軸按鈕：兩端卷軸（side）+ 中段紙張（center 隨寬度伸縮）。
+  center 用背景圖鋪滿；side 用 ::before / ::after 固定左右兩端，右端旋轉 180 度。
+  文字疊在中段紙張上（深墨色）。供 editor / modal / intro 共用。
+*/
+@mixin scroll-button($center, $side) {
+  position: relative;
+  border: none;
+  border-radius: 0;
+  background-color: transparent; // 移除 <button> 預設底色
+  background-image: url($center);
+  background-repeat: no-repeat;
+  background-position: center;
+  background-size: 100% 100%; // 中段隨寬度伸縮
+  color: #4a3526; // 紙張上的墨色字
+  padding-left: 1.75rem; // 預留兩端卷軸空間，文字不壓到卷軸
+  padding-right: 1.75rem;
+
+  &::before,
+  &::after {
+    content: '';
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    z-index: 1;
+    aspect-ratio: 560 / 1542; // 卷軸原圖比例，由高度推算寬度
+    background-repeat: no-repeat;
+    background-position: center;
+    background-size: 100% 100%;
+    background-image: url($side);
+    pointer-events: none;
+  }
+
+  &::before {
+    left: 0;
+  }
+
+  &::after {
+    right: 0;
+    transform: rotate(180deg);
+  }
+}
+
+@mixin scroll-button-red {
+  @include scroll-button('/red-btn-center.webp', '/red-btn-side.webp');
+}
+
+@mixin scroll-button-blue {
+  @include scroll-button('/blue-btn-center.webp', '/blue-btn-side.webp');
+}
+
 // 圓形圖示按鈕 56px（上一步、下一步）
 @mixin btn-circle-icon {
   @include btn-reset;

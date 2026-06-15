@@ -21,7 +21,7 @@
     z-index: 500;
     max-height: 100dvh;
     background-color: #f5f5f5;
-    background-image: url('/paperBg.webp');
+    background-image: url('/editorBg.webp');
     background-size: cover;
     background-position: center;
     background-repeat: no-repeat;
@@ -42,11 +42,12 @@
     display: flex;
     flex-direction: column;
     text-align: center;
-    background: rgba(255, 255, 255, 0.9);
+    // 與 modal / header 一致的米色配色 + 細邊框 + 統一圓角
+    background: #f5eede;
+    border: 1px solid rgba(120, 110, 90, 0.18);
     padding: 2rem 1rem;
-    border-radius: 20px;
+    border-radius: 0.75rem;
     box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
-    backdrop-filter: blur(10px);
     overflow: visible;
     box-sizing: border-box;
 }
@@ -74,8 +75,10 @@
 
 .p-index__intro-logo {
     display: block;
-    width: 70%;
+    width: 50%;
     height: auto;
+    /* logo.svg 只有 viewBox 沒有 width/height，明確指定比例避免 <img> 高度塌陷導致 logo 不顯示 */
+    aspect-ratio: 428.543 / 160.451;
     margin: 0 auto 1rem;
     object-fit: contain;
     filter: drop-shadow(1px 1px 0px rgba(0, 0, 0, 0.15));
@@ -137,8 +140,8 @@
         background: white;
 
         &:checked {
-            background-color: var.$will-blue;
-            border-color: var.$will-blue;
+            background-color: #4a3526; // 墨色（與卷軸按鈕文字一致）
+            border-color: #4a3526;
 
             &::after {
                 content: '';
@@ -155,9 +158,8 @@
 
 .p-index__intro-btn {
     @include btn.btn-action;
+    @include btn.scroll-button-blue; // 卷軸樣式（藍）
     width: 80%;
-    background: var.$will-blue;
-    color: white;
     padding: 0.75rem 1.5rem;
     font-size: 1.1rem;
     margin: 0 auto;
@@ -210,7 +212,7 @@
         left: 50%;
         top: 50%;
         transform: translate(-50%, -50%);
-        background-image: url('/paperBg.webp');
+        background-image: url('/editorBg.webp');
         background-repeat: repeat;
         background-size: 2500px;
         z-index: -1;
@@ -285,8 +287,7 @@
 
 .c-btn--fab {
     @include btn.btn-action;
-    background: var.$color-grey;
-    color: white;
+    @include btn.scroll-button-blue; // 卷軸樣式（藍），與「開始」按鈕一致
 }
 
 /* 活動介紹 overlay 進出場 */

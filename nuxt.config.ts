@@ -32,16 +32,16 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: 'WillMusic - Post Board',
+      title: '故宮南院 - Post Board',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no' },
-        { name: 'description', content: 'Interactive digital sticky notes for K-Pop record store' }
+        { name: 'description', content: 'Interactive digital sticky notes for National Palace Museum Southern Branch' }
       ],
       link: [
         { rel: 'preconnect', href: 'https://fonts.googleapis.com' },
         { rel: 'preconnect', href: 'https://fonts.gstatic.com', crossorigin: '' },
-        { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&display=swap' }
+        { rel: 'stylesheet', href: 'https://fonts.googleapis.com/css2?family=Nanum+Pen+Script&family=LXGW+WenKai+TC&display=swap' }
       ],
       ...(gtmId ? {
         script: [

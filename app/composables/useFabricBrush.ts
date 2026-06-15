@@ -4,10 +4,65 @@
  * Fabric.js 以動態 import 載入，讓編輯器主 bundle 不包含 ~500KB 的 Fabric.js，
  * 顯著降低低端手機因 JS 解析/執行過重而崩潰的機率。
  * Fabric.js 只在使用者首次呼叫 init() 時才開始下載（瀏覽器通常會快取，後續載入幾乎免費）。
+ *
+ * 書法筆刷（毛筆感）：以 perfect-freehand 依書寫速度模擬提按，產生「中間粗、起收筆尖鋒」
+ * 的筆畫外框多邊形再填色（非等寬向量線）。Level 2 另加邊緣粗糙（飛白感）與宣紙墨韻紋理。
  */
+import { getStroke } from 'perfect-freehand'
 
 // ── 橡皮擦路徑取樣距離平方（避免每個 touchmove 都新增 Path 物件）
 const MIN_ERASER_DIST_SQ = 9 // ≥ 3px 才累積下一個點
+
+type Pt = [number, number]
+
+/** 將 perfect-freehand 的外框點轉成 SVG path 字串（官方建議寫法：以中點當錨、兩端為控制點） */
+function getSvgPathFromStroke(points: Pt[]): string {
+  if (!points.length) return ''
+  const first = points[0]!
+  const d: (string | number)[] = ['M', first[0], first[1], 'Q']
+  for (let i = 0; i < points.length; i++) {
+    const p0 = points[i]!
+    const p1 = points[(i + 1) % points.length]!
+    d.push(p0[0], p0[1], (p0[0] + p1[0]) / 2, (p0[1] + p1[1]) / 2)
+  }
+  d.push('Z')
+  return d.join(' ')
+}
+
+/** 邊緣粗糙化：以索引為種子的決定性擾動，讓填好的筆畫邊緣不再是乾淨向量線（毛筆飛白感） */
+function roughenOutline(points: Pt[], amp: number): Pt[] {
+  if (amp <= 0) return points
+  return points.map(([x, y], i) => {
+    const n = Math.sin((i + 1) * 12.9898) * 43758.5453
+    const r = n - Math.floor(n) // 0..1 決定性偽隨機
+    const a = r * Math.PI * 2
+    return [x + Math.cos(a) * amp * r, y + Math.sin(a) * amp * r] as Pt
+  })
+}
+
+/** 產生宣紙/墨韻顆粒材質：滿版墨色 + 散布半透明孔洞（飛白），作為筆畫填充 pattern 來源 */
+function makeInkGrainCanvas(color: string): HTMLCanvasElement | null {
+  if (typeof document === 'undefined') return null
+  const size = 90
+  const c = document.createElement('canvas')
+  c.width = c.height = size
+  const g = c.getContext('2d')
+  if (!g) return null
+  g.fillStyle = color
+  g.fillRect(0, 0, size, size)
+  // destination-out：在墨層上鑿出細小透明孔，模擬乾筆飛白與宣紙吸墨的顆粒感
+  g.globalCompositeOperation = 'destination-out'
+  for (let i = 0; i < 220; i++) {
+    const x = Math.random() * size
+    const y = Math.random() * size
+    const r = Math.random() * 1.4
+    g.globalAlpha = Math.random() * 0.45
+    g.beginPath()
+    g.arc(x, y, r, 0, Math.PI * 2)
+    g.fill()
+  }
+  return c
+}
 
 function drawBrushCursor(ctx: CanvasRenderingContext2D, x: number, y: number, radius: number) {
   ctx.save()
@@ -27,7 +82,7 @@ type AnyObj = any
 
 export function useFabricBrush(onPathCreated?: () => void) {
   let fabricCanvas: AnyObj = null
-  let pencilBrush: AnyObj = null
+  let inkBrush: AnyObj = null
   let eraserBrush: AnyObj = null
   const redoStack: AnyObj[] = []
   let onUndoRedoChange: (() => void) | null = null
@@ -50,7 +105,7 @@ export function useFabricBrush(onPathCreated?: () => void) {
     initialHeight = height
 
     // ── 動態載入 Fabric.js（不進入主 bundle）
-    const { Canvas, PencilBrush } = await import('fabric')
+    const { Canvas, PencilBrush, Path, Pattern } = await import('fabric')
 
     // ── 橡皮擦筆刷：繼承 PencilBrush，使用 destination-out 混合模式
     //    關鍵修正：onMouseMove 加入距離門檻，避免每個 touchmove 點都新增 Path 物件
@@ -136,6 +191,79 @@ export function useFabricBrush(onPathCreated?: () => void) {
       }
     }
 
+    // ── 書法筆刷：繼承 PencilBrush 沿用點蒐集與事件流程，但改以 perfect-freehand
+    //    產生「依速度提按 + 起收筆尖鋒」的外框多邊形再填色（毛筆感）。
+    class InkBrush extends PencilBrush {
+      // perfect-freehand 參數
+      thinning = 0.62      // 速度→粗細變化幅度（越大粗細對比越強）
+      smoothing = 0.55
+      streamline = 0.5
+      inkOpacity = 1       // 不透明：墨色實心，不帶透明度
+      roughness = 0.09     // 邊緣粗糙比例（毛筆飛白感），相對於筆刷大小
+      _grainPattern: AnyObj = null // 宣紙墨韻 pattern（依顏色快取）
+
+      // 強制每次移動都整筆重繪（填色外框會隨新點全域改變，不能用增量畫線）
+      override needsFullRender() { return true }
+
+      _buildOutline(roughen: boolean): string {
+        const pts: Pt[] = ((this as AnyObj)._points as AnyObj[]).map((p) => [p.x, p.y] as Pt)
+        if (pts.length === 0) return ''
+        const size = (this as AnyObj).width as number
+        const outline = getStroke(pts, {
+          size,
+          thinning: this.thinning,
+          smoothing: this.smoothing,
+          streamline: this.streamline,
+          simulatePressure: true, // 無觸控壓力時，依點距（=速度）模擬提按
+          start: { taper: size * 2, cap: true },
+          end: { taper: size * 2, cap: true }
+        }) as Pt[]
+        if (!outline.length) return ''
+        const finalPts = roughen ? roughenOutline(outline, size * this.roughness) : outline
+        return getSvgPathFromStroke(finalPts)
+      }
+
+      _inkFill(): AnyObj {
+        if (!this._grainPattern) {
+          const src = makeInkGrainCanvas((this as AnyObj).color)
+          if (src) this._grainPattern = new Pattern({ source: src, repeat: 'repeat' })
+        }
+        return this._grainPattern ?? (this as AnyObj).color
+      }
+
+      // 即時預覽：填滿目前筆畫外框（乾淨填色，落筆放開後才套粗糙邊與紋理）
+      override _render(ctx: CanvasRenderingContext2D = (this as AnyObj).canvas.contextTop) {
+        const d = this._buildOutline(false)
+        if (!d) return
+        this._saveAndTransform(ctx)
+        ctx.globalAlpha = this.inkOpacity
+        ctx.fillStyle = (this as AnyObj).color
+        ctx.fill(new Path2D(d))
+        ctx.restore()
+      }
+
+      // 放開後：以粗糙邊外框 + 墨韻 pattern 建立正式 Path 物件
+      override _finalizeAndAddPath() {
+        const canvas: AnyObj = (this as AnyObj).canvas
+        const ctx = canvas.contextTop
+        ctx.closePath()
+        const d = this._buildOutline(true)
+        if (!d) { canvas.requestRenderAll(); return }
+        const path = new Path(d, {
+          fill: this._inkFill(),
+          stroke: null,
+          strokeWidth: 0,
+          opacity: this.inkOpacity
+        })
+        canvas.clearContext(ctx)
+        canvas.fire('before:path:created', { path })
+        canvas.add(path)
+        canvas.requestRenderAll()
+        path.setCoords()
+        canvas.fire('path:created', { path })
+      }
+    }
+
     fabricCanvas = new Canvas(canvasEl, {
       width,
       height,
@@ -152,15 +280,15 @@ export function useFabricBrush(onPathCreated?: () => void) {
       if (onPathCreated) onPathCreated()
     })
 
-    pencilBrush = new PencilBrush(fabricCanvas)
-    pencilBrush.color = '#333333'
-    pencilBrush.width = 4
+    inkBrush = new InkBrush(fabricCanvas)
+    inkBrush.color = '#241F20'
+    inkBrush.width = 8
 
     eraserBrush = new EraserBrush(fabricCanvas)
     eraserBrush.color = 'rgba(255, 255, 255, 1)'
     eraserBrush.width = 16
 
-    fabricCanvas.freeDrawingBrush = pencilBrush
+    fabricCanvas.freeDrawingBrush = inkBrush
   }
 
   const setDrawingMode = (enabled: boolean) => {
@@ -168,16 +296,19 @@ export function useFabricBrush(onPathCreated?: () => void) {
   }
 
   const setEraserMode = (enabled: boolean) => {
-    if (!fabricCanvas || !pencilBrush || !eraserBrush) return
-    fabricCanvas.freeDrawingBrush = enabled ? eraserBrush : pencilBrush
+    if (!fabricCanvas || !inkBrush || !eraserBrush) return
+    fabricCanvas.freeDrawingBrush = enabled ? eraserBrush : inkBrush
   }
 
   const setBrushColor = (color: string) => {
-    if (pencilBrush) pencilBrush.color = color
+    if (inkBrush) {
+      inkBrush.color = color
+      inkBrush._grainPattern = null // 顏色變更時讓墨韻 pattern 依新色重建
+    }
   }
 
   const setBrushWidth = (width: number) => {
-    if (pencilBrush) pencilBrush.width = width
+    if (inkBrush) inkBrush.width = width
   }
 
   const setEraserWidth = (width: number) => {
@@ -353,7 +484,7 @@ export function useFabricBrush(onPathCreated?: () => void) {
       _isMinimized = false
       fabricCanvas.dispose()
       fabricCanvas = null
-      pencilBrush = null
+      inkBrush = null
       eraserBrush = null
     }
   }

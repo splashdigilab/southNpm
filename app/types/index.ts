@@ -13,66 +13,28 @@ export interface StickerInstance {
 }
 
 /**
- * 文字區塊實例（多文字支援）
- */
-export interface TextBlockInstance {
-  id: string
-  content: string
-  x: number
-  y: number
-  scale: number
-  rotation: number
-  color: string
-  align: TextAlign
-  /** 鎖定圖層：無法被點擊選取，只能長按解鎖 */
-  locked?: boolean
-}
-
-/**
  * 草稿資料
  */
-export type TextAlign = 'left' | 'center' | 'right'
-
 export interface DraftData {
-  content: string
-  backgroundImage: string // 背景圖片 URL
-  shape: string // 造型 ID
-  textColor: string
-  textAlign?: TextAlign
   stickers: StickerInstance[]
-  textTransform?: TextBlockTransform
-  textBlocks?: TextBlockInstance[] // 多文字區塊
   drawing?: string // 手繪內容 data URL
   /** 各物件 id 的疊放順序（與編輯器 objectZOrder 一致）；載入草稿時還原 */
   objectLayerOrder?: Record<string, number>
+  /** 本次描紅字帖 id（public/font），用於草稿續編時維持同一個字 */
+  font?: string
   timestamp: number
-}
-
-/**
- * 文字區塊變換（位置、縮放、旋轉）
- */
-export interface TextBlockTransform {
-  x: number
-  y: number
-  scale: number
-  rotation: number
 }
 
 /**
  * 便利貼樣式配置
  */
 export interface StickyNoteStyle {
-  backgroundImage: string // 背景圖片 URL
-  shape: string // 造型 ID (對應 shapes.ts)
-  textColor: string
-  textAlign?: TextAlign // 文字對齊：左、中、右
-  fontFamily?: string
   stickers?: StickerInstance[] // 貼紙
-  textTransform?: TextBlockTransform // 文字區塊位置、縮放、旋轉（舊格式向下相容）
-  textBlocks?: TextBlockInstance[] // 多文字區塊
   drawing?: string // 手繪內容 data URL (base64 PNG)
-  /** 各物件 id 的疊放順序（預覽/上傳/display 與編輯器一致）；無則沿用預設文字 1、貼紙 3 */
+  /** 各物件 id 的疊放順序（預覽/上傳/display 與編輯器一致）；無則沿用預設 */
   objectLayerOrder?: Record<string, number>
+  /** 本次描紅所用字帖 id（public/font）；用於避免 LED 牆上同字重複，不渲染於便利貼 */
+  font?: string
 }
 
 /**

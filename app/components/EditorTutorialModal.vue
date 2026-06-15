@@ -19,11 +19,61 @@
             :class="`tutorial-demo--step-${currentStep}`"
           >
             <div class="tutorial-demo__stage">
-              <!-- 編輯框 + scaleUp 圖：一起動畫 -->
-              <div v-if="currentStepData" class="tutorial-demo__object-wrap">
+              <!-- 稿紙描紅範字（墊在底下、半透明） -->
+              <img src="/font/font-01.svg" class="tutorial-demo__font" alt="" />
+
+              <!-- 寫字步驟：手指沿曲線由左到右移動，墨色筆畫同步一筆寫出 -->
+              <template v-if="currentStepData.type === 'write'">
+                <svg
+                  class="tutorial-demo__write-svg"
+                  viewBox="0 0 200 120"
+                  fill="none"
+                  preserveAspectRatio="xMidYMid meet"
+                  aria-hidden="true"
+                >
+                  <path
+                    class="tutorial-demo__write-path"
+                    pathLength="100"
+                    d="M26,80 C66,58 96,52 124,60 C146,66 166,72 178,62"
+                    stroke="#241F20"
+                    stroke-width="13"
+                    stroke-linecap="round"
+                    stroke-linejoin="round"
+                  />
+                  <!-- 手指：沿同一條曲線移動，與筆畫同步 -->
+                  <image
+                    class="tutorial-demo__write-hand"
+                    href="/tutorial-drag.svg"
+                    width="50"
+                    height="50"
+                    x="-12"
+                    y="-4"
+                  >
+                    <animateMotion
+                      dur="3.2s"
+                      repeatCount="indefinite"
+                      calcMode="spline"
+                      keyTimes="0;0.12;0.68;1"
+                      keyPoints="0;0;1;1"
+                      keySplines="0 0 1 1; .42 0 .58 1; 0 0 1 1"
+                      path="M26,80 C66,58 96,52 124,60 C146,66 166,72 178,62"
+                    />
+                    <animate
+                      attributeName="opacity"
+                      dur="3.2s"
+                      repeatCount="indefinite"
+                      keyTimes="0;0.12;0.68;0.92;1"
+                      values="0;0.9;0.9;0.9;0"
+                    />
+                  </image>
+                </svg>
+              </template>
+
+              <!-- 物件步驟（拖移/旋轉/縮放）：編輯框 + 手勢圖一起動畫 -->
+              <div v-else class="tutorial-demo__object-wrap">
                 <img :src="currentStepData.image" class="tutorial-demo__guesture" alt="" />
                 <div class="tutorial-demo__object">
-                  <span class="tutorial-demo__object-text">文字</span>
+                  <img src="/decoration/decoration-01.svg" class="tutorial-demo__object-img" alt="" />
                 </div>
               </div>
             </div>
@@ -82,16 +132,25 @@ const currentStep = ref(0)
 
 const steps = [
   {
-    title: '單指拖移',
-    message: '選取文字或貼紙，即可隨心移動位置。',
+    type: 'write',
+    title: '書寫',
+    message: '用手指在稿紙上寫下你的字。',
     image: '/tutorial-drag.svg'
   },
   {
+    type: 'object',
+    title: '單指拖移',
+    message: '選取貼紙，即可隨心移動位置。',
+    image: '/tutorial-drag.svg'
+  },
+  {
+    type: 'object',
     title: '雙指旋轉',
     message: '雙指旋轉物件，輕鬆調整呈現角度。',
     image: '/tutorial-rotate.svg'
   },
   {
+    type: 'object',
     title: '雙指縮放',
     message: '雙指捏合或張開，自由放大縮小物件。',
     image: '/tutorial-scale.svg'

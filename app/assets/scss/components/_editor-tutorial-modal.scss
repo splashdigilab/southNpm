@@ -28,11 +28,24 @@
   flex: 1;
   min-height: 250px;
   width: 100%;
-  background-color: var.$will-blue;
+  background: url('/paper.webp') center / cover no-repeat; // 稿紙底圖
   border-radius: 12px;
   position: relative;
   overflow: hidden;
-  font-family: 'JasonHandwriting2', sans-serif;
+}
+
+/* 稿紙描紅範字：置中、半透明，墊在最底層 */
+.tutorial-demo__font {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 82%;
+  height: 82%;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
+  opacity: 0.16;
+  pointer-events: none;
+  z-index: 0;
 }
 
 /* 與 editor 一致的被選取物件：outline + 拖曳條 */
@@ -42,27 +55,23 @@
   top: 50%;
   transform: translate(-50%, -50%);
   transform-origin: center center;
+  z-index: 1; // 在描紅範字之上
 }
 
 .tutorial-demo__object {
   position: relative;
-  padding: 8px 14px;
-  min-width: 56px;
-  min-height: 32px;
-  color: white;
-  font-size: 14px;
-  line-height: 1.4;
-  word-break: break-word;
-  // border-radius: 4px;
+  padding: 6px;
   /* 與 editor is-selected 同款 */
   outline: 2px solid var.$editor-selection-outline;
   outline-offset: 4px;
   pointer-events: none;
 }
 
-.tutorial-demo__object-text {
+.tutorial-demo__object-img {
   display: block;
-  font-size: 1.5rem;
+  width: 56px;
+  height: 56px;
+  object-fit: contain;
 }
 
 /* 手勢圖：跟著編輯框一起動畫 */
@@ -79,8 +88,60 @@
   opacity: 0.75;
 }
 
-/* ========== 步驟 0：雙指拖移示意動畫 ========== */
-.tutorial-demo--step-0 .tutorial-demo__object-wrap {
+/* ========== 步驟 0：書寫示意動畫（手指由左到右，沿曲線一筆寫出） ========== */
+/* 有機曲線筆畫：用 SVG path + stroke-dashoffset 自繪，像手寫運筆 */
+.tutorial-demo__write-svg {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: 72%;
+  height: auto;
+  transform: translate(-50%, -50%);
+  z-index: 2;
+  pointer-events: none;
+  overflow: visible;
+}
+
+/* dasharray 用「on off」等長，避免整條遮住時 round cap 殘留一個圓點 */
+.tutorial-demo__write-path {
+  stroke-dasharray: 100 100;
+  stroke-dashoffset: 100; // 預設整條遮住
+}
+
+.tutorial-demo__write-hand {
+  pointer-events: none; // 由 SVG animateMotion 沿曲線移動，與筆畫同步
+}
+
+.tutorial-demo--step-0 .tutorial-demo__write-path {
+  animation: tutorial-write-draw 3.2s ease-in-out infinite;
+}
+
+/*
+  筆畫一筆寫出：dashoffset 由 100 收到 0（沿曲線顯現），尾段淡出再循環。
+  關鍵：完全遮住（dashoffset:100）時 opacity 必須維持 0，否則 round cap 會在
+  路徑端點留下一個小圓點被淡入顯示（右端冒黑點）。等真正開始描繪才不透明。
+*/
+@keyframes tutorial-write-draw {
+  0%, 12% {
+    stroke-dashoffset: 100;
+    opacity: 0;
+  }
+  16% {
+    stroke-dashoffset: 92;
+    opacity: 1;
+  }
+  68%, 92% {
+    stroke-dashoffset: 0;
+    opacity: 1;
+  }
+  100% {
+    stroke-dashoffset: 0;
+    opacity: 0;
+  }
+}
+
+/* ========== 步驟 1：單指拖移示意動畫 ========== */
+.tutorial-demo--step-1 .tutorial-demo__object-wrap {
   animation: tutorial-drag-object 2.8s ease-in-out infinite;
 }
 
@@ -100,8 +161,8 @@
   }
 }
 
-/* ========== 步驟 1：雙指旋轉示意動畫 ========== */
-.tutorial-demo--step-1 .tutorial-demo__object-wrap {
+/* ========== 步驟 2：雙指旋轉示意動畫 ========== */
+.tutorial-demo--step-2 .tutorial-demo__object-wrap {
   animation: tutorial-rotate-object 3s ease-in-out infinite;
 }
 
@@ -125,8 +186,8 @@
   }
 }
 
-/* ========== 步驟 2：雙指縮放示意動畫 ========== */
-.tutorial-demo--step-2 .tutorial-demo__object-wrap {
+/* ========== 步驟 3：雙指縮放示意動畫 ========== */
+.tutorial-demo--step-3 .tutorial-demo__object-wrap {
   animation: tutorial-scale-object 2.8s ease-in-out infinite;
 }
 

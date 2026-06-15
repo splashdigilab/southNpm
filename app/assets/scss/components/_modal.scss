@@ -21,8 +21,10 @@
 }
 
 .c-modal {
-    background: white;
-    border-radius: 16px;
+    // 與 header / 控制面板一致的米色配色 + 細邊框 + 統一圓角
+    background: #f5eede;
+    border: 1px solid rgba(120, 110, 90, 0.18);
+    border-radius: 0.75rem;
     padding: 2rem;
     max-width: 400px;
     width: 100%;
@@ -79,22 +81,19 @@
     }
 }
 
-// Modal Buttons
+// Modal Buttons（卷軸樣式：紅/藍）
 .c-button {
     @include btn.btn-action;
 
     &--secondary {
-        background: var.$will-red;
-        color: white;
+        @include btn.scroll-button-red;
     }
 
     &--primary {
-        background: var.$will-blue;
-        color: white;
+        @include btn.scroll-button-blue;
     }
 
     &--danger {
-        background: var.$will-red; // #dc2626;
-        color: white;
+        @include btn.scroll-button-red;
     }
 }

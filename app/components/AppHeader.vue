@@ -4,7 +4,7 @@
       <img src="/back-btn.svg" alt="返回" />
     </button>
     <div class="c-header__logo">
-      <img src="/postBoardLogo.svg" alt="WillMusic Logo" />
+      <img src="/logo.svg" alt="故宮南院 Logo" />
     </div>
     <div v-if="$slots.trailing || showHelp" class="c-header__trailing">
       <slot name="trailing">

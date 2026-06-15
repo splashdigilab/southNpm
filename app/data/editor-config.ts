@@ -2,70 +2,27 @@
  * 編輯器相關常數
  */
 
-export const MAX_CONTENT_LENGTH = 200
-
 export const EDITOR_TABS = [
-  { id: 'note' as const, label: '便利貼', icon: '/editor-icon/icons3.png' },
-  { id: 'text' as const, label: '文字', icon: '/editor-icon/icons2.png' },
-  { id: 'draw' as const, label: '繪圖', icon: '/editor-icon/icons1.png' },
-  { id: 'sticker' as const, label: '貼紙', icon: '/editor-icon/icons4.png' }
+  { id: 'draw' as const, label: '書法', bg: '/tab-1.webp' },
+  { id: 'sticker' as const, label: '貼紙', bg: '/tab-2.webp' }
 ] as const
 
 export type EditorTabId = typeof EDITOR_TABS[number]['id']
 
-export const TEXT_ALIGN_OPTIONS = [
-  { value: 'left' as const, svg: '/align-left.svg' },
-  { value: 'center' as const, svg: '/align-center.svg' },
-  { value: 'right' as const, svg: '/align-right.svg' }
+/** 書法固定墨色（黑墨） */
+export const CALLIGRAPHY_BRUSH_COLOR = '#241F20'
+
+/**
+ * 筆刷粗細：三種尺寸。
+ * - value：實際筆刷大小（perfect-freehand size，600 虛擬座標下的 px）
+ * - dot：選擇器按鈕內示意圓點直徑（px）
+ * - ring：按鈕外圈直徑（px）
+ */
+export const BRUSH_SIZES = [
+  { value: 34, label: '細', dot: 12, ring: 24 },
+  { value: 52, label: '中', dot: 16, ring: 28 },
+  { value: 72, label: '粗', dot: 20, ring: 32 }
 ] as const
 
-/** 色相環順序：白/黑 → 紅 → 橙 → 黃 → 綠 → 青 → 藍 → 紫 → 粉 */
-export const TEXT_COLORS = [
-  { value: '#ffffff' },
-  { value: '#241F20' },
-  { value: '#E6204D' },
-  { value: '#FF99B2' },
-  { value: '#f7c9c9' },
-  { value: '#fcc2be' },
-  { value: '#f7c495' },
-  { value: '#f5e6a4' },
-  { value: '#f99d1c' },
-  { value: '#bad887' },
-  { value: '#a6e2de' },
-  { value: '#00A8C6' },
-  { value: '#66E5FF' },
-  { value: '#12205c' },
-  { value: '#bbdcef' },
-  { value: '#81a5f9' },
-  { value: '#91a9d0' },
-  { value: '#b95ee7' },
-  { value: '#e4c5ef' },
-  { value: '#fb5c9c' },
-  { value: '#ff99cb' },
-  { value: '#fccdd9' },
-] as const
-
-export const BRUSH_COLORS = [
-  { value: '#ffffff' },
-  { value: '#241F20' },
-  { value: '#E6204D' },
-  { value: '#FF99B2' },
-  { value: '#f7c9c9' },
-  { value: '#fcc2be' },
-  { value: '#f7c495' },
-  { value: '#f5e6a4' },
-  { value: '#f99d1c' },
-  { value: '#bad887' },
-  { value: '#a6e2de' },
-  { value: '#00A8C6' },
-  { value: '#66E5FF' },
-  { value: '#12205c' },
-  { value: '#bbdcef' },
-  { value: '#81a5f9' },
-  { value: '#91a9d0' },
-  { value: '#b95ee7' },
-  { value: '#e4c5ef' },
-  { value: '#fb5c9c' },
-  { value: '#ff99cb' },
-  { value: '#fccdd9' },
-] as const
+/** 預設筆刷大小（中）：須為 BRUSH_SIZES 其中一個 value */
+export const DEFAULT_BRUSH_SIZE = BRUSH_SIZES[1].value
