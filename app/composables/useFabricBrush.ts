@@ -424,8 +424,13 @@ export function useFabricBrush(onPathCreated?: () => void) {
       redoStack.length = 0
       fabricCanvas.clear()
       fabricCanvas.backgroundColor = 'transparent'
-      initialWidth = fabricCanvas.getWidth()
-      initialHeight = fabricCanvas.getHeight()
+      // 注意：清除全部時畫布常處於 minimize（1×1）狀態，不能在此重抓尺寸，
+      // 否則 initialWidth/Height 會被存成 1×1，下次 restoreCanvas 還原成 1×1 而無法書寫。
+      // 尺寸由 resize()／首次 restore 維護，clear 不需更動。
+      if (!_isMinimized) {
+        initialWidth = fabricCanvas.getWidth()
+        initialHeight = fabricCanvas.getHeight()
+      }
       fabricCanvas.renderAll()
       onUndoRedoChange?.()
     }

@@ -895,7 +895,8 @@ const confirmClearAll = () => {
   resetEditorToInitial()
   clearDraft()
   showClearAllModal.value = false
-  // 清空只清內容，保留目前的描紅字帖（不換字）
+  // 清空只清內容，保留目前的描紅字帖（不換字）；清完直接回到「書法」狀態可繼續書寫
+  activeTab.value = 'draw'
 }
 
 const handleDraftDecision = async (useDraft: boolean) => {
