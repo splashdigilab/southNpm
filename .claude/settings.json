@@ -23,7 +23,11 @@
       "Bash(grep -E \"\\\\.env$|\\\\.env\\\\.\")",
       "Bash(node -e \"console.log\\(require\\('./node_modules/fabric/package.json'\\).version\\)\")",
       "Bash(grep -n \"listenToHistory\\\\|listenToPendingQueue\\\\|moveToHistory\" app/composables/useFirestore.ts | head; echo \"---signature---\"; sed -n '/listenToHistory/,/^  }/p' app/composables/useFirestore.ts | head -40)",
-      "Bash(echo \"exit: $?\")"
+      "Bash(echo \"exit: $?\")",
+      "Bash(command -v firebase)",
+      "Bash(firebase --version)",
+      "Bash(npx --yes firebase-tools login:list)",
+      "Bash(npx --yes firebase-tools deploy --only firestore:indexes --project southnpm-a7f0b)"
     ],
     "additionalDirectories": [
       "/Users/kevin/Documents/Github/southNpm/app/composables"

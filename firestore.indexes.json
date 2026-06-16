@@ -1,0 +1,15 @@
+{
+  "indexes": [],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "queue_history",
+      "fieldPath": "style.drawing",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "queue_pending",
+      "fieldPath": "style.drawing",
+      "indexes": []
+    }
+  ]
+}

@@ -394,8 +394,17 @@ const beginCanvasSession = async () => {
       if (!id || promotedIds.has(id)) continue
       promotedIds.add(id)
       moveToHistory(it).catch((e) => {
-        promotedIds.delete(id)
-        console.warn('[wall] moveToHistory 失敗', e)
+        // 永久性失敗（多半是 drawing 過大／queue_history 缺索引豁免）→ 別重試，
+        // 否則每次 pending 快照都重送同一筆，洗版錯誤又無濟於事；留在 promotedIds 直接略過。
+        const code = e?.code
+        const permanent = code === 'failed-precondition' || code === 'invalid-argument' || code === 'permission-denied'
+        if (permanent) {
+          console.error('[wall] moveToHistory 永久失敗，略過此筆', id, code)
+        } else {
+          // 暫時性錯誤（網路等）→ 放回去下次重試
+          promotedIds.delete(id)
+          console.warn('[wall] moveToHistory 暫時失敗，稍後重試', e)
+        }
       })
     }
   })
