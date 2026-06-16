@@ -28,7 +28,8 @@
       "Bash(firebase --version)",
       "Bash(npx --yes firebase-tools login:list)",
       "Bash(npx --yes firebase-tools deploy --only firestore:indexes --project southnpm-a7f0b)",
-      "Bash(awk '/^    clear\\\\\\(\\\\\\) \\\\{/{f=1} f{print NR\": \"$0} f&&/^    \\\\}/{c++; if\\(c>=1\\){exit}}' node_modules/fabric/dist/index.js)"
+      "Bash(awk '/^    clear\\\\\\(\\\\\\) \\\\{/{f=1} f{print NR\": \"$0} f&&/^    \\\\}/{c++; if\\(c>=1\\){exit}}' node_modules/fabric/dist/index.js)",
+      "Bash(grep -rn \"background\\\\|paperBg\\\\|#\\\\|\\\\$\" app/assets/scss/base/_global.scss)"
     ],
     "additionalDirectories": [
       "/Users/kevin/Documents/Github/southNpm/app/composables"

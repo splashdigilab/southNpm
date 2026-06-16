@@ -1,108 +1,121 @@
 /*
-  Page: Queue Status Minimal
-  佇列狀態與等待時間頁面 
+  Page: Queue Status
+  佇列狀態與等待時間頁面（沿用全站米色卷軸風格）
 */
-.p-queue-status-minimal {
+@use '../components/button' as btn;
+
+.p-queue-status {
   position: fixed;
   inset: 0;
   display: flex;
-  align-items: center;
-  justify-content: center;
-  background-color: #f8f9fa;
-  /* Very light gray/off-white background */
-  font-family: 'LXGW WenKai TC', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-  color: #111;
+  flex-direction: column;
+  background-color: #f5f5f5;
+  background-image: url('/editorBg.webp');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  color: #4a3526; // 墨色
 }
 
-.p-queue-status-minimal__container {
+.p-queue-status__container {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+
+/* 與 intro-card / modal 一致的米色卡片 */
+.p-queue-status__card {
   width: 100%;
   max-width: 400px;
-  padding: 40px 32px;
   display: flex;
   flex-direction: column;
-  gap: 60px;
-}
-
-.p-queue-status-minimal__title {
-  font-size: 32px;
-  font-weight: 800;
-  letter-spacing: -0.02em;
-  margin: 0 0 40px 0;
+  align-items: center;
   text-align: center;
+  background: #f5eede;
+  border: 1px solid rgba(120, 110, 90, 0.18);
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+  padding: 2rem 1.5rem;
+  box-sizing: border-box;
 }
 
-.p-queue-status-minimal__stats {
-  display: flex;
-  flex-direction: column;
-  background: #fff;
-  border-radius: 20px;
-  padding: 30px;
-  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.04);
-  border: 1px solid rgba(0, 0, 0, 0.05);
+.p-queue-status__title {
+  font-size: 1.75rem;
+  font-weight: bold;
+  letter-spacing: 0.02em;
+  margin: 0;
 }
 
-.p-queue-status-minimal__stat-item {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  gap: 8px;
+.p-queue-status__hint {
+  margin: 0.5rem 0 0;
+  font-size: 0.95rem;
+  color: rgba(74, 53, 38, 0.7);
 }
 
-.p-queue-status-minimal__stat-label {
-  font-size: 14px;
-  color: #666;
-  font-weight: 500;
-  text-transform: uppercase;
-  letter-spacing: 0.05em;
-}
-
-.p-queue-status-minimal__stat-value {
-  font-size: 48px;
-  font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.03em;
-  font-variant-numeric: tabular-nums;
-  /* Prevents jumping during countdown */
-}
-
-.p-queue-status-minimal__stat-value small {
-  font-size: 20px;
-  font-weight: 500;
-  color: #888;
-  margin-left: 4px;
-}
-
-.p-queue-status-minimal__stat-value.is-countdown {
-  color: #000;
-}
-
-.p-queue-status-minimal__stat-divider {
-  height: 1px;
-  background: rgba(0, 0, 0, 0.08);
-  margin: 24px 0;
+.p-queue-status__stats {
   width: 100%;
-}
-
-.p-queue-status-minimal__actions {
   display: flex;
-  justify-content: center;
+  flex-direction: column;
+  margin: 1.75rem 0;
+  background: rgba(255, 255, 255, 0.55);
+  border: 1px solid rgba(120, 110, 90, 0.14);
+  border-radius: 0.75rem;
+  padding: 1.5rem;
 }
 
-.p-queue-status-minimal__btn-home {
-  display: inline-flex;
+.p-queue-status__stat-item {
+  display: flex;
+  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  background: #111;
-  color: #fff;
-  text-decoration: none;
-  padding: 16px 32px;
-  border-radius: 100px;
-  font-size: 16px;
-  font-weight: 600;
-  transition: transform 0.2s ease, opacity 0.2s ease;
+  gap: 0.5rem;
 }
 
-.p-queue-status-minimal__btn-home:active {
-  transform: scale(0.96);
-  opacity: 0.9;
+.p-queue-status__stat-label {
+  font-size: 0.9rem;
+  font-weight: 500;
+  letter-spacing: 0.08em;
+  color: rgba(74, 53, 38, 0.6);
+}
+
+.p-queue-status__stat-value {
+  font-size: 2.75rem;
+  font-weight: bold;
+  line-height: 1;
+  font-variant-numeric: tabular-nums; // 倒數時不跳動
+  color: #4a3526;
+
+  small {
+    font-size: 1.1rem;
+    font-weight: 500;
+    color: rgba(74, 53, 38, 0.6);
+    margin-left: 0.25rem;
+  }
+}
+
+.p-queue-status__stat-value--time {
+  font-size: 1.85rem;
+}
+
+.p-queue-status__stat-divider {
+  width: 100%;
+  height: 1px;
+  background: rgba(120, 110, 90, 0.18);
+  margin: 1.5rem 0;
+}
+
+/* 主要操作按鈕：沿用全站卷軸（藍）樣式 */
+.p-queue-status__btn {
+  @include btn.btn-action;
+  @include btn.scroll-button-blue;
+  flex: 0 0 auto; // 覆寫 btn-action 的 flex:1，避免在直向卡片內被拉長
+  width: 80%;
+  padding: 0.75rem 1.5rem;
+  font-size: 1.1rem;
+
+  &:active {
+    transform: scale(0.97);
+  }
 }

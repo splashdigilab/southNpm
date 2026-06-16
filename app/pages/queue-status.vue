@@ -1,34 +1,28 @@
 <template>
-  <div class="p-queue-status-minimal">
+  <div class="p-queue-status">
     <AppHeader />
-    <div class="p-queue-status-minimal__container">
-      
-      <!-- Queue Info -->
-      <div class="p-queue-status-minimal__content">
-        <h1 class="p-queue-status-minimal__title">等待中</h1>
-        
-        <div class="p-queue-status-minimal__stats">
-          <div class="p-queue-status-minimal__stat-item">
-            <span class="p-queue-status-minimal__stat-label">目前佇列</span>
-            <span class="p-queue-status-minimal__stat-value">{{ queueCount }} <small>張</small></span>
+    <div class="p-queue-status__container">
+
+      <!-- 卡片：等待資訊 -->
+      <div class="p-queue-status__card">
+        <h1 class="p-queue-status__title">等待中</h1>
+        <p class="p-queue-status__hint">您的作品已送出，正在排隊上牆</p>
+
+        <div class="p-queue-status__stats">
+          <div class="p-queue-status__stat-item">
+            <span class="p-queue-status__stat-label">目前佇列</span>
+            <span class="p-queue-status__stat-value">{{ queueCount }} <small>張</small></span>
           </div>
 
-          <div class="p-queue-status-minimal__stat-divider"></div>
+          <div class="p-queue-status__stat-divider"></div>
 
-          <div class="p-queue-status-minimal__stat-item">
-            <span class="p-queue-status-minimal__stat-label">預估時間</span>
-            <span class="p-queue-status-minimal__stat-value">
-              {{ formattedTime }}
-            </span>
+          <div class="p-queue-status__stat-item">
+            <span class="p-queue-status__stat-label">預估時間</span>
+            <span class="p-queue-status__stat-value p-queue-status__stat-value--time">{{ formattedTime }}</span>
           </div>
         </div>
-      </div>
 
-      <!-- Actions -->
-      <div class="p-queue-status-minimal__actions">
-        <NuxtLink to="/editor" class="p-queue-status-minimal__btn-home">
-          返回編輯器
-        </NuxtLink>
+        <NuxtLink to="/editor" class="p-queue-status__btn">返回編輯器</NuxtLink>
       </div>
 
     </div>
