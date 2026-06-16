@@ -20,7 +20,13 @@
       "Bash(grep -rn 'will-red\\\\|will-blue\\\\|$color-grey\\\\|--color-text' app/assets/scss/base/_variables.scss)",
       "Bash(sips -g pixelWidth -g pixelHeight public/editorBg.webp)",
       "Bash(awk '/pixel/{print $1,$2}')",
-      "Bash(grep -E \"\\\\.env$|\\\\.env\\\\.\")"
+      "Bash(grep -E \"\\\\.env$|\\\\.env\\\\.\")",
+      "Bash(node -e \"console.log\\(require\\('./node_modules/fabric/package.json'\\).version\\)\")",
+      "Bash(grep -n \"listenToHistory\\\\|listenToPendingQueue\\\\|moveToHistory\" app/composables/useFirestore.ts | head; echo \"---signature---\"; sed -n '/listenToHistory/,/^  }/p' app/composables/useFirestore.ts | head -40)",
+      "Bash(echo \"exit: $?\")"
+    ],
+    "additionalDirectories": [
+      "/Users/kevin/Documents/Github/southNpm/app/composables"
     ]
   }
 }

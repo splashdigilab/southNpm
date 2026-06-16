@@ -5,8 +5,8 @@ const clamp = (v: number, min: number, max: number) => Math.min(max, Math.max(mi
 
 // 貼紙拖曳允許超出畫布邊界的範圍（以畫布百分比為單位）
 // 保留少許邊界讓貼紙不會完全消失、仍可被選取拉回
-const DRAG_MIN = -40
-const DRAG_MAX = 140
+const DRAG_MIN = -100
+const DRAG_MAX = 200
 
 export interface UseStickerInteractionOptions {
   canvasRef: Ref<HTMLElement | null>
@@ -106,7 +106,7 @@ export function useStickerInteraction(options: UseStickerInteractionOptions) {
     const onTouchMove = (moveEvent: TouchEvent) => {
       if (!dragState || !moveEvent.touches[0] || moveEvent.touches.length > 1) return
       if (moveEvent.touches.length === 1 && canvasRef.value) {
-        moveEvent.preventDefault()
+        if (moveEvent.cancelable) moveEvent.preventDefault()
         const t = moveEvent.touches[0]
         const rect = canvasRef.value.getBoundingClientRect()
         const deltaX = ((t.clientX - dragState.startX) / rect.width) * 100
@@ -198,7 +198,7 @@ export function useStickerInteraction(options: UseStickerInteractionOptions) {
   const onTransformHandleTouchStart = (e: TouchEvent, sticker: StickerInstance) => {
     const touch = e.touches[0]
     if (!touch || !canvasRef.value) return
-    e.preventDefault()
+    if (e.cancelable) e.preventDefault()
 
     const rect = canvasRef.value.getBoundingClientRect()
     const centerX = rect.width * (sticker.x / 100)
@@ -223,7 +223,7 @@ export function useStickerInteraction(options: UseStickerInteractionOptions) {
 
     const onTouchMove = (moveEvent: TouchEvent) => {
       if (!transformState || !canvasRef.value || !moveEvent.touches[0]) return
-      moveEvent.preventDefault()
+      if (moveEvent.cancelable) moveEvent.preventDefault()
       const t = moveEvent.touches[0]
       const r = canvasRef.value.getBoundingClientRect()
       const curX = t.clientX - r.left

@@ -204,7 +204,7 @@
             <button
               class="p-editor__edit-frame-delete"
               @click.stop="removeSticker(sticker.id)"
-              @touchstart.stop.prevent="removeSticker(sticker.id)"
+              @touchstart.stop="onDeleteStickerTouch($event, sticker.id)"
               aria-label="刪除"
             >
               <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
@@ -396,7 +396,7 @@ import { useFirestore } from '~/composables/useFirestore'
 import { useFabricBrush } from '~/composables/useFabricBrush'
 import { useRoute, useRouter } from 'vue-router'
 import { useHead } from '#imports'
-import { doc, getDoc, onSnapshot } from 'firebase/firestore'
+import { doc, getDoc, getDocs, onSnapshot, collection, query, orderBy, limit } from 'firebase/firestore'
 import StickyNote from '~/components/StickyNote.vue'
 import AppModal from '~/components/AppModal.vue'
 import EditorTutorialModal from '~/components/EditorTutorialModal.vue'
@@ -444,29 +444,46 @@ const draggingStickerId = ref<string | null>(null)
 const selectedFontId = ref<string | null>(null)
 const selectedFontUrl = computed(() => selectedFontId.value ? getFontUrl(selectedFontId.value) : '')
 
-/** 讀取 LED 牆目前顯示的字（system/current_state 的 now_playing + live_grid），回傳已用字帖 id 集合 */
-const getFontsOnScreen = async (): Promise<Set<string>> => {
+/** 牆面容量：歷史只取最新 N 筆，對應大螢幕 12×12 格陣目前顯示的字 */
+const WALL_CAPACITY = 144
+
+/**
+ * 讀取目前「已上傳」所使用的字帖 id 集合，用於避免描紅字帖與牆上重複。
+ * 直接讀 Firestore 權威來源（queue_history 最新 144 筆 + queue_pending 待播），
+ * 不依賴 system/current_state（那只有大螢幕開著時才會更新，牆沒開就會抓不到而撞字）。
+ */
+const getUsedFonts = async (): Promise<Set<string>> => {
   const used = new Set<string>()
-  try {
-    // 加上 timeout：離線/弱網時 getDoc 可能長時間不回應，不能讓它卡住描紅底圖的顯示
-    const snap = await Promise.race([
-      getDoc(doc(db, 'system', 'current_state')),
-      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('current_state timeout')), 2500))
-    ])
-    if (snap.exists()) {
-      const data = snap.data() as any
-      const items: any[] = [
-        data?.now_playing,
-        ...(Array.isArray(data?.live_grid) ? data.live_grid : [])
-      ].filter(Boolean)
-      for (const it of items) {
-        const f = it?.style?.font
-        if (typeof f === 'string' && f) used.add(f)
-      }
+  const collectFonts = (docs: { data: () => any }[]) => {
+    for (const d of docs) {
+      const f = d.data()?.style?.font
+      if (typeof f === 'string' && f) used.add(f)
     }
+  }
+  try {
+    // 加上 timeout：離線/弱網/冷啟動時 getDocs 可能長時間不回應，不能卡住描紅底圖的顯示。
+    // 逾時走 fallback（純隨機），常見的冷啟動逾時只印 debug、不噴錯誤堆疊。
+    const TIMEOUT = Symbol('timeout')
+    const historyQ = query(
+      collection(db, 'queue_history'),
+      orderBy('playedAt', 'desc'),
+      limit(WALL_CAPACITY)
+    )
+    const pendingQ = query(collection(db, 'queue_pending'), limit(WALL_CAPACITY))
+    const result = await Promise.race([
+      Promise.all([getDocs(historyQ), getDocs(pendingQ)]),
+      new Promise<typeof TIMEOUT>(resolve => setTimeout(() => resolve(TIMEOUT), 6000))
+    ])
+    if (result === TIMEOUT) {
+      console.debug('[Editor] 讀取已用字逾時，描紅字帖改純隨機')
+      return used
+    }
+    const [historySnap, pendingSnap] = result
+    collectFonts(historySnap.docs)
+    collectFonts(pendingSnap.docs)
   } catch (e) {
-    // 讀不到（牆未開、權限或網路）就視為無已用字，純隨機挑選
-    console.warn('[Editor] 讀取 current_state 失敗，描紅字帖改純隨機', e)
+    // 讀不到（權限或網路）就視為無已用字，純隨機挑選
+    console.warn('[Editor] 讀取已用字失敗，描紅字帖改純隨機', e)
   }
   return used
 }
@@ -486,7 +503,7 @@ const pickUniqueFont = async () => {
   const initial = pickRandomFont()
   selectedFontId.value = initial
 
-  const used = await getFontsOnScreen()
+  const used = await getUsedFonts()
   if (initial && used.has(initial)) {
     const available = FONT_LIST.filter(id => !used.has(id))
     if (available.length > 0) {
@@ -798,6 +815,13 @@ const removeSticker = (id: string) => {
   stickers.value = stickers.value.filter(s => s.id !== id)
   selectedStickerId.value = null
   saveDraftData()
+}
+
+// touchstart 上刪除貼紙：捲動中 touchstart 可能 cancelable=false，需先判斷再 preventDefault，
+// 避免瀏覽器跳出 [Intervention] Ignored attempt to cancel a touchstart event 警告
+const onDeleteStickerTouch = (e: TouchEvent, id: string) => {
+  if (e.cancelable) e.preventDefault()
+  removeSticker(id)
 }
 
 const loadDraftData = async (draft: DraftData) => {

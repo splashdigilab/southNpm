@@ -242,7 +242,7 @@ export function usePanZoom(
 
     const onTouchMove = (e: TouchEvent) => {
         if (unref(options.disabled)) return
-        e.preventDefault()
+        if (e.cancelable) e.preventDefault()
         if (!containerRef.value) return
 
         if (activeTouches === 1 && isDragging.value && e.touches[0]) {

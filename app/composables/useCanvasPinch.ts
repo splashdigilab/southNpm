@@ -8,6 +8,10 @@ const SCALE_MIN = 1
 const SCALE_MAX = 20
 const RAD_TO_DEG = 180 / Math.PI
 
+// 貼紙拖曳允許超出畫布邊界的範圍（中心點百分比）
+const DRAG_MIN = -100
+const DRAG_MAX = 200
+
 export interface UseCanvasPinchOptions {
   canvasRef: Ref<HTMLElement | null>
   drawMode: Ref<boolean>
@@ -146,15 +150,8 @@ export function useCanvasPinch(options: UseCanvasPinchOptions) {
 
     const st = stickers.value.find(s => s.id === stickerId)
     if (!st) return
-    const frameEl = el.querySelector(
-      `.p-editor__edit-frame--sticker[data-sticker-id="${stickerId}"]`
-    ) as HTMLElement | null
-    if (!frameEl) return
-    const fr = frameEl.getBoundingClientRect()
-    const halfWidthPct = (fr.width / rect.width) * 50
-    const halfHeightPct = (fr.height / rect.height) * 50
-    st.x = clamp(st.x, halfWidthPct, 100 - halfWidthPct)
-    st.y = clamp(st.y, halfHeightPct, 100 - halfHeightPct)
+    st.x = clamp(st.x, DRAG_MIN, DRAG_MAX)
+    st.y = clamp(st.y, DRAG_MIN, DRAG_MAX)
   }
 
   const attachPinchListeners = (el: HTMLElement, t0: Touch, t1: Touch) => {
@@ -281,7 +278,8 @@ export function useCanvasPinch(options: UseCanvasPinchOptions) {
         const center = 50
         const threshold = centerSnapThresholdPct
 
-        const applyPosition = (pos: { x: number; y: number }, hwPct: number, hhPct: number) => {
+        // 允許貼紙拖出畫布邊界，僅保留中心 snap（不再用半寬/半高限制在畫布內）
+        const applyPosition = (pos: { x: number; y: number }) => {
           let { x, y } = pos
 
           if (Math.abs(x - center) <= threshold) {
@@ -299,21 +297,17 @@ export function useCanvasPinch(options: UseCanvasPinchOptions) {
           }
 
           return {
-            x: clamp(x, hwPct, 100 - hwPct),
-            y: clamp(y, hhPct, 100 - hhPct)
+            x: clamp(x, DRAG_MIN, DRAG_MAX),
+            y: clamp(y, DRAG_MIN, DRAG_MAX)
           }
         }
 
         const st = stickers.value.find(item => item.id === canvasDragState!.stickerId)
         if (st) {
-          const next = applyPosition(
-            {
-              x: canvasDragState.initX + deltaX,
-              y: canvasDragState.initY + deltaY
-            },
-            canvasDragState.halfWidthPct,
-            canvasDragState.halfHeightPct
-          )
+          const next = applyPosition({
+            x: canvasDragState.initX + deltaX,
+            y: canvasDragState.initY + deltaY
+          })
           st.x = next.x
           st.y = next.y
         }

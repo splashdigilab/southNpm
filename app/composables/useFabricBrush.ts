@@ -315,9 +315,22 @@ export function useFabricBrush(onPathCreated?: () => void) {
     if (eraserBrush) eraserBrush.width = width
   }
 
+  // Firestore 單筆文件上限為 1 MiB；drawing 以 base64 字串存進 style.drawing，
+  // 字串長度 ≈ 實際存入大小。保留充足餘裕（其餘欄位很小），把 dataURL 字串長度壓在此上限內，
+  // 避免密集筆畫的便利貼在上傳/轉入歷史時觸發 failed-precondition（文件過大）。
+  const MAX_DRAWING_CHARS = 850 * 1024
+
   const exportToDataURL = (): string | null => {
     if (!fabricCanvas) return null
-    return fabricCanvas.toDataURL({ format: 'png', quality: 1, multiplier: 1 })
+    // 多數便利貼用 multiplier=1（600×600）即遠低於上限，不會變動畫質；
+    // 只有筆畫非常密集導致過大時，才逐級降採樣到安全範圍。
+    let last: string | null = null
+    for (const multiplier of [1, 0.8, 0.65, 0.5, 0.4]) {
+      const url = fabricCanvas.toDataURL({ format: 'png', quality: 1, multiplier })
+      last = url
+      if (url.length <= MAX_DRAWING_CHARS) return url
+    }
+    return last
   }
 
   const setOnUndoRedoChange = (cb: (() => void) | null) => {

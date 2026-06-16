@@ -14,28 +14,38 @@
     <p class="p-canvas-start__hint">請點擊「開始」以啟用播放（含插播影片聲音）。</p>
     <button type="button" class="p-canvas-start__btn" @click="beginCanvasSession">開始</button>
   </div>
-  <div v-show="isCanvasReady && hasUserStarted" class="p-wall" :style="{ '--note-scale': noteScale }">
+  <div v-show="isCanvasReady && hasUserStarted" class="p-wall">
     <!-- 固定 445:250 比例的展示舞台，置中、不超出螢幕，外圍以黑色填滿 -->
     <div class="p-wall__stage">
-      <!-- 單一展示區：固定 N 個格位，超出數量時最舊往上淡出、最新往上淡入 -->
-      <div class="p-wall__zone" ref="zoneRef">
+      <!-- 左側 12×12 paper.webp 格陣：依 font 編號決定固定格位（font-01 右上 → font-144 左下） -->
+      <div ref="gridRef" class="p-wall__grid">
         <div
-          v-for="(slot, i) in slots"
+          v-for="i in TOTAL_CELLS"
           :key="i"
-          class="p-wall__slot"
-          :style="slotStyle(slot)"
+          class="p-wall__cell"
+          :data-cell="i - 1"
+          :style="cellGridStyle(i - 1)"
         >
-          <Transition name="note-up">
-            <div
-              v-if="slotNote[i]"
-              :key="getId(slotNote[i])"
-              class="p-wall__note"
-            >
-              <div class="p-wall__note-inner" :style="{ transform: `rotate(${slot.rot}deg)` }">
-                <StickyNote :note="slotNote[i]" />
-              </div>
-            </div>
-          </Transition>
+          <!-- 不用淡入：聚光飛入動畫結束時與聚光元素「同一影格」原子交換，避免落定瞬間閃一下 -->
+          <div
+            v-if="gridNotes[i - 1]"
+            :key="getId(gridNotes[i - 1])"
+            class="p-wall__cell-note"
+          >
+            <StickyNote :note="noteAt(i - 1)" />
+          </div>
+        </div>
+      </div>
+
+      <!-- 聚光區：新上傳的字先在畫面右側中段放大，10 秒後飛回左側自己的格子 -->
+      <div
+        v-if="spotlightNote"
+        ref="spotlightRef"
+        class="p-wall__spotlight"
+        :key="getId(spotlightNote)"
+      >
+        <div class="p-wall__cell-note">
+          <StickyNote :note="spotlightNote" />
         </div>
       </div>
     </div>
@@ -59,8 +69,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
-import { useRoute } from 'vue-router'
+import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore'
 import StickyNote from '~/components/StickyNote.vue'
 import { useFirestore } from '~/composables/useFirestore'
@@ -75,228 +84,204 @@ definePageMeta({ layout: false })
 
 type Note = QueueHistoryItem | QueuePendingItem
 
-/* ─── URL 參數 ─── */
-const route = useRoute()
-/** 畫面最多顯示的便利貼數量；超出才會淘汰最舊的 */
-const capacity = computed(() => Math.max(1, Number(route.query.count) || 16))
-const noteScale = computed(() => Number(route.query.scale ?? route.query.liveScale) || 0.95)
+/* ─── 格陣設定 ─── */
+const GRID_COLS = 12
+const GRID_ROWS = 12
+const TOTAL_CELLS = GRID_COLS * GRID_ROWS // 144
+/** 新字在右下角放大停留的時間，到時才縮回自己的格子 */
+const SPOTLIGHT_HOLD_MS = 10000
 
 /* ─── Firestore ─── */
 const { $firestore } = useNuxtApp()
 const db = $firestore as any
 const { listenToHistory, listenToPendingQueue, moveToHistory } = useFirestore()
 
-const getId = (n: Note | null | undefined): string => (n ? (n.id ?? n.token ?? '') : '')
+// 以穩定的 token 當識別（doc id 會因 self-healing 刪孤兒／去重而改變，會害同一張被當成新字重播）
+const getId = (n: Note | null | undefined): string => (n ? (n.token ?? n.id ?? '') : '')
+
+/** 取 playedAt 的毫秒；serverTimestamp 尚未解析時為 null（代表剛寫入＝真的剛上傳） */
+function playedAtMs(n: Note | null | undefined): number | null {
+  const p = (n as QueueHistoryItem | undefined)?.playedAt as any
+  if (!p) return null
+  if (typeof p.toMillis === 'function') return p.toMillis()
+  if (p instanceof Date) return p.getTime()
+  if (typeof p === 'number') return p
+  return null
+}
+
+/** 只有「最近上傳」的字才播聚光；超過此秒數視為舊資料（含時鐘誤差留餘裕） */
+const SPOTLIGHT_RECENT_MS = 60_000
+
+/** 取出格位上的便利貼（模板於 v-if 已保證非空），讓型別收斂為 Note 供 StickyNote 使用 */
+const noteAt = (idx: number): Note => gridNotes[idx] as Note
+
+/** 由 note.style.font（如 "font-37"）取出 1~144 的編號；無效則回傳 null */
+function fontNumberOf(n: Note | null | undefined): number | null {
+  const f = n?.style?.font
+  if (typeof f !== 'string') return null
+  const m = /font-0*(\d+)/.exec(f)
+  if (!m) return null
+  const num = Number(m[1])
+  return Number.isFinite(num) && num >= 1 && num <= TOTAL_CELLS ? num : null
+}
+
+/**
+ * 格位填法：由右上往下，最左邊是最後一列。
+ *   font-01 → 右上角；font-12 → 最右一列最下；font-13 → 右邊第二列最上；font-144 → 左下角。
+ * 以 0-based 格位 idx（= font 編號 − 1）換算 CSS grid 的欄/列（1-based，欄由左數）。
+ */
+function cellGridStyle(idx: number) {
+  const colFromRight = Math.floor(idx / GRID_ROWS) // 0 = 最右一列
+  const row = idx % GRID_ROWS                       // 0 = 最上
+  return {
+    gridColumn: String(GRID_COLS - colFromRight),
+    gridRow: String(row + 1)
+  }
+}
 
 /* ─── 狀態 ─── */
 const isCanvasReady = ref(false)
 const hasUserStarted = ref(false)
 
-/* ─── 展示格位（固定 N 個位置，position 穩定不重排） ─── */
-interface Slot { left: number; top: number; size: number; rot: number }
-const zoneRef = ref<HTMLElement | null>(null)
-const slots = ref<Slot[]>([])
-/** 每個格位目前的便利貼（null = 空）；改變即觸發該格位的淡入/淡出 */
-const slotNote = reactive<(Note | null)[]>([])
-/** 空格填入順序（打散，避免一開始都擠在中央） */
-let emptyFillOrder: number[] = []
+const gridRef = ref<HTMLElement | null>(null)
+const spotlightRef = ref<HTMLElement | null>(null)
 
-const slotStyle = (slot: Slot) => ({
-  left: `${slot.left}px`,
-  top: `${slot.top}px`,
-  width: `${slot.size}px`,
-  height: `${slot.size}px`
-})
+/** 144 個固定格位目前的便利貼（null = 空） */
+const gridNotes = reactive<(Note | null)[]>(new Array(TOTAL_CELLS).fill(null))
+/** 已放進格子或已排入聚光佇列的 id，避免重複處理 */
+const knownIds = new Set<string>()
+let initialized = false
 
-/* ══════════════════════════════════════════════
-   不重疊散布座標（Fermat 螺旋 + 碰撞檢測）
-   ══════════════════════════════════════════════ */
-const PADDING = 40
-const VIRTUAL_ITEM_SIZE = 550
-/** 物件之間額外保留的間距（虛擬單位，>0 確保彼此不接觸） */
-const VIRTUAL_GAP = 30
-const SPIRAL_C = 35
-
-interface VPos { x: number; y: number }
-
-function getGridKey(x: number, y: number, cell: number): string {
-  return `${Math.floor(x / cell)},${Math.floor(y / cell)}`
-}
-function isColliding(pos: VPos, grid: Map<string, VPos[]>, cell: number, radius: number): boolean {
-  const cx = Math.floor(pos.x / cell)
-  const cy = Math.floor(pos.y / cell)
-  const diamSq = (radius * 2) ** 2
-  for (let dx = -1; dx <= 1; dx++) {
-    for (let dy = -1; dy <= 1; dy++) {
-      const ns = grid.get(`${cx + dx},${cy + dy}`)
-      if (ns) for (const e of ns) {
-        const ddx = pos.x - e.x, ddy = pos.y - e.y
-        if (ddx * ddx + ddy * ddy < diamSq) return true
-      }
-    }
-  }
-  return false
-}
-/**
- * 以 collisionRadius（便利貼外接圓半徑 + 半間距）做碰撞檢測；
- * 任意旋轉角度的方形都被其外接圓涵蓋，故圓不重疊 ⇒ 方形必不重疊。
- *
- * aspect = 目標區域寬高比。螺旋點在「碰撞檢測前」即依此比例做等面積拉伸
- * （x×√aspect、y÷√aspect），使最終只需等比縮放即可填滿區域、無需破壞
- * 不重疊保證的非等比壓縮。
- */
-function calcVirtualPositions(count: number, collisionRadius: number, aspect: number): VPos[] {
-  const cell = collisionRadius * 2
-  const sx = Math.sqrt(aspect)
-  const sy = 1 / sx
-  const positions: VPos[] = []
-  const grid = new Map<string, VPos[]>()
-  let spiralIndex = 0
-  for (let i = 0; i < count; i++) {
-    let cur: VPos = { x: 0, y: 0 }
-    if (i > 0) {
-      let found = false
-      while (!found) {
-        const r = SPIRAL_C * Math.sqrt(spiralIndex)
-        const theta = spiralIndex * 137.508 * (Math.PI / 180)
-        cur = { x: r * Math.cos(theta) * sx, y: r * Math.sin(theta) * sy }
-        if (!isColliding(cur, grid, cell, collisionRadius)) found = true
-        spiralIndex++
-      }
-    } else {
-      spiralIndex++
-    }
-    positions.push(cur)
-    const key = getGridKey(cur.x, cur.y, cell)
-    if (!grid.has(key)) grid.set(key, [])
-    grid.get(key)!.push(cur)
-  }
-  return positions
-}
-
-/** 依容量計算固定 N 個格位（穩定座標，不隨數量重排） */
-function recomputeSlots() {
-  const zone = zoneRef.value
-  if (!zone) return
-  const n = capacity.value
-  const zoneW = zone.clientWidth - PADDING * 2
-  const zoneH = zone.clientHeight - PADDING * 2
-  if (zoneW <= 0 || zoneH <= 0 || n <= 0) return
-
-  // 便利貼實際佔位（含 noteScale），碰撞與邊界皆以此為準
-  const itemSize = VIRTUAL_ITEM_SIZE * noteScale.value
-  const collisionRadius = (itemSize * Math.SQRT2 + VIRTUAL_GAP) / 2
-  const positions = calcVirtualPositions(n, collisionRadius, zoneW / zoneH)
-
-  let minX = positions[0]!.x - itemSize / 2
-  let maxX = positions[0]!.x + itemSize / 2
-  let minY = positions[0]!.y - itemSize / 2
-  let maxY = positions[0]!.y + itemSize / 2
-  for (let i = 1; i < positions.length; i++) {
-    const p = positions[i]!
-    minX = Math.min(minX, p.x - itemSize / 2)
-    maxX = Math.max(maxX, p.x + itemSize / 2)
-    minY = Math.min(minY, p.y - itemSize / 2)
-    maxY = Math.max(maxY, p.y + itemSize / 2)
-  }
-
-  const virtualW = maxX - minX
-  const virtualH = maxY - minY
-
-  // 點雲已預先拉伸成接近區域比例，僅做等比縮放即可填滿，不破壞不重疊保證
-  const scale = Math.min((zoneW / virtualW) || 1, (zoneH / virtualH) || 1)
-  const size = Math.max(40, itemSize * scale)
-
-  // 等比縮放後，較寬鬆的軸會剩餘空白；置中以免整體偏向左上
-  const offsetX = (zoneW - virtualW * scale) / 2
-  const offsetY = (zoneH - virtualH * scale) / 2
-
-  const prevRot = slots.value.map(s => s.rot)
-  const next: Slot[] = positions.map((p, i) => {
-    const cx = (p.x - minX) * scale + offsetX
-    const cy = (p.y - minY) * scale + offsetY
-    return {
-      left: Math.max(0, Math.min(cx - size / 2, zoneW - size)) + PADDING,
-      top: Math.max(0, Math.min(cy - size / 2, zoneH - size)) + PADDING,
-      size,
-      rot: prevRot[i] ?? (Math.random() - 0.5) * 12 // rot 穩定，不因重算而跳動
-    }
-  })
-
-  slots.value = next
-  // 初始化 slotNote 長度與空格填入順序（保留既有的便利貼）
-  if (slotNote.length !== n) {
-    slotNote.length = n
-    for (let i = 0; i < n; i++) if (slotNote[i] === undefined) slotNote[i] = null
-  }
-  emptyFillOrder = shuffle([...Array(n).keys()])
-}
-
-function shuffle<T>(arr: T[]): T[] {
-  for (let i = arr.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1))
-    ;[arr[i], arr[j]] = [arr[j]!, arr[i]!]
-  }
-  return arr
-}
+/* ─── 聚光佇列 ─── */
+const spotlightNote = ref<Note | null>(null)
+const spotQueue: Note[] = []
+let spotlightBusy = false
+let spotlightTimer: ReturnType<typeof setTimeout> | null = null
+let currentTween: { kill: () => void } | null = null
 
 /* ══════════════════════════════════════════════
-   展示資料：歷史驅動畫面、pending 即時轉入歷史
+   展示資料：歷史驅動格陣，pending 即時轉入歷史
    ══════════════════════════════════════════════ */
 let unsubHistory: (() => void) | null = null
 let unsubPending: (() => void) | null = null
 const promotedIds = new Set<string>()
 
-/** 依最新歷史清單，計算要淡出（最舊）與淡入（最新）的格位，crossfade 在同一格位完成 */
 function applyHistory(items: Note[]) {
-  if (!slots.value.length) return
-  const n = capacity.value
-  const incoming = items.slice(0, n)
-  const incomingIds = new Set(incoming.map(getId))
+  const valid = items.filter(it => fontNumberOf(it) != null)
 
-  const presentIds = new Set<string>()
-  const removedSlots: number[] = []
-  for (let i = 0; i < n; i++) {
-    const note = slotNote[i]
-    if (!note) continue
-    const id = getId(note)
-    if (incomingIds.has(id)) presentIds.add(id)
-    else removedSlots.push(i) // 已掉出畫面（最舊）→ 待淡出
+  // 首次載入：所有既有的字直接出現在格子裡，不播放放大動畫
+  if (!initialized) {
+    for (const it of valid) {
+      const idx = fontNumberOf(it)! - 1
+      // 先標記為已知：同 font 的較舊重複字會被 continue 跳過，若不在此記錄就會被
+      // 下一次快照當成「新字」排進聚光佇列重播（font-116、font-11 先跑的成因）
+      knownIds.add(getId(it))
+      if (gridNotes[idx]) continue
+      gridNotes[idx] = it
+    }
+    initialized = true
+    broadcastState()
+    return
   }
 
-  // 新到的（最新）：反轉成由舊到新，讓最新的最後填入
-  const added = incoming.filter(note => !presentIds.has(getId(note))).reverse()
-
-  const emptySlots = emptyFillOrder.filter(i => !slotNote[i] && !removedSlots.includes(i))
-  // 優先重用「最舊淡出」的格位 → 同一格位完成 最舊往上淡出 + 最新往上淡入
-  const freeQueue = [...removedSlots, ...emptySlots]
-
-  for (const note of added) {
-    const slot = freeQueue.shift()
-    if (slot === undefined) break
-    slotNote[slot] = note
+  // 之後第一次看到的字（依序 舊→新）
+  const fresh = valid.filter(it => !knownIds.has(getId(it))).reverse()
+  if (!fresh.length) return
+  const now = Date.now()
+  let queued = false
+  for (const it of fresh) {
+    knownIds.add(getId(it))
+    const ms = playedAtMs(it)
+    // ms == null：剛寫入、serverTimestamp 尚未解析 → 真的剛上傳，播聚光
+    // 近 SPOTLIGHT_RECENT_MS 內：真的新上傳，播聚光
+    // 否則：舊資料因 limit 視窗位移／快取補進而首次被看到 → 直接落格，不重播聚光
+    if (ms == null || now - ms < SPOTLIGHT_RECENT_MS) {
+      spotQueue.push(it)
+      queued = true
+    } else {
+      const idx = fontNumberOf(it)! - 1
+      if (!gridNotes[idx]) gridNotes[idx] = it
+    }
   }
-
-  // 沒有被新便利貼接手的淘汰格位 → 清空（單純往上淡出）
-  for (const i of removedSlots) {
-    const note = slotNote[i]
-    if (note && !incomingIds.has(getId(note))) slotNote[i] = null
-  }
-
   broadcastState()
+  if (queued) void processSpotlightQueue()
+}
+
+async function processSpotlightQueue() {
+  if (spotlightBusy || !spotQueue.length) return
+  spotlightBusy = true
+
+  const note = spotQueue.shift()!
+  spotlightNote.value = note
+  await nextTick()
+
+  // 右下角放大停留 SPOTLIGHT_HOLD_MS
+  await new Promise<void>(resolve => {
+    spotlightTimer = setTimeout(resolve, SPOTLIGHT_HOLD_MS)
+  })
+  spotlightTimer = null
+
+  await flyToCell(note)
+
+  spotlightBusy = false
+  void processSpotlightQueue()
+}
+
+/** FLIP：把聚光中的便利貼從右下角縮放平移到它在格陣中的目標格位，完成後落定格子 */
+async function flyToCell(note: Note) {
+  const idx = fontNumberOf(note)! - 1
+  const commit = () => {
+    gridNotes[idx] = note
+    spotlightNote.value = null
+    broadcastState()
+  }
+
+  const spotEl = spotlightRef.value
+  const cellEl = gridRef.value?.querySelector(`[data-cell="${idx}"]`) as HTMLElement | null
+  if (!spotEl || !cellEl) { commit(); return }
+
+  // 清掉進場 CSS 動畫，避免其 transform 蓋過 GSAP 的 inline transform 造成「瞬移」
+  spotEl.style.animation = 'none'
+
+  const s = spotEl.getBoundingClientRect()
+  const t = cellEl.getBoundingClientRect()
+  if (!s.width || !t.width) { commit(); return }
+
+  const dx = (t.left + t.width / 2) - (s.left + s.width / 2)
+  const dy = (t.top + t.height / 2) - (s.top + s.height / 2)
+  const scale = t.width / s.width
+
+  try {
+    const { gsap } = await import('gsap')
+    await new Promise<void>(resolve => {
+      currentTween = gsap.to(spotEl, {
+        x: dx,
+        y: dy,
+        scale,
+        duration: 0.85,
+        ease: 'power3.inOut',
+        onComplete: () => resolve()
+      })
+    })
+  } catch {
+    /* 動畫失敗就直接落定 */
+  } finally {
+    currentTween = null
+  }
+  commit()
 }
 
 /** 廣播目前畫面上的便利貼（精簡：僅 id/token/font），供編輯器避免同字重複 */
 function broadcastState() {
-  const notes = slotNote.filter(Boolean) as Note[]
-  const live_grid = notes.map(n => ({
+  const live = [...gridNotes, spotlightNote.value].filter(Boolean) as Note[]
+  const live_grid = live.map(n => ({
     id: getId(n),
     token: n.token ?? getId(n),
     status: n.status ?? 'played',
     style: { font: n.style?.font ?? null }
   }))
   setDoc(doc(db, 'system', 'current_state'), {
-    mode: notes.length ? 'live' : 'idle',
+    mode: live.length ? 'live' : 'idle',
     now_playing: null,
     live_grid,
     updated_at: Date.now()
@@ -396,14 +381,13 @@ const beginCanvasSession = async () => {
   if (hasUserStarted.value) return
   hasUserStarted.value = true
   await nextTick()
-  recomputeSlots()
 
-  // 載入畫面：歷史驅動展示
-  unsubHistory = listenToHistory(capacity.value, (items) => {
+  // 載入畫面：歷史驅動格陣（最多 144 格）
+  unsubHistory = listenToHistory(TOTAL_CELLS, (items) => {
     applyHistory(items as Note[])
   })
 
-  // pending 即時轉入歷史（轉入後會經由 history listener 淡入畫面）
+  // pending 即時轉入歷史（轉入後會經由 history listener 進入格陣）
   unsubPending = listenToPendingQueue((items) => {
     for (const it of items) {
       const id = getId(it)
@@ -431,11 +415,12 @@ const beginCanvasSession = async () => {
   }, 1000)
 }
 
-let onResize: (() => void) | null = null
-
 onMounted(async () => {
   document.body.style.margin = '0'
   document.body.style.overflow = 'hidden'
+
+  // 背景預載 GSAP，讓第一個聚光飛入時不需等待動態載入
+  if (typeof window !== 'undefined') import('gsap').catch(() => {})
 
   try {
     const initialSnap = await getDoc(doc(db, 'system', 'canvas_video'))
@@ -451,9 +436,6 @@ onMounted(async () => {
     }
   })
 
-  onResize = () => recomputeSlots()
-  window.addEventListener('resize', onResize)
-
   isCanvasReady.value = true
 })
 
@@ -462,7 +444,8 @@ onUnmounted(() => {
   unsubPending?.(); unsubPending = null
   unsubCanvasVideo?.(); unsubCanvasVideo = null
   if (interstitialArmTimer) { clearInterval(interstitialArmTimer); interstitialArmTimer = null }
-  if (onResize) { window.removeEventListener('resize', onResize); onResize = null }
+  if (spotlightTimer) { clearTimeout(spotlightTimer); spotlightTimer = null }
+  currentTween?.kill()
   document.body.style.margin = ''
   document.body.style.overflow = ''
 })
