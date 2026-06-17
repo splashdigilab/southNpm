@@ -11,6 +11,12 @@ export default defineNuxtConfig({
 
   srcDir: 'app',
 
+  // 大螢幕展示頁完全靠 client 端（Firebase / GSAP / video），SSR 無益且會造成
+  // hydration mismatch；直接關閉該頁 SSR。
+  routeRules: {
+    '/canvas': { ssr: false },
+  },
+
   css: [
     '~/assets/scss/main.scss'
   ],

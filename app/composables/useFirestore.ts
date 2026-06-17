@@ -168,7 +168,10 @@ export const useFirestore = () => {
    */
   const listenToHistory = (
     pageSize: number = 60,
-    callback: (items: QueueHistoryItem[]) => void
+    callback: (items: QueueHistoryItem[]) => void,
+    // 可選：回報本次快照中「移出」的 doc id（type === 'removed'）。
+    // 注意：被刪除 與「被更新的字擠出 limit 視窗」都會觸發 removed，呼叫端需自行確認是否真的被刪。
+    onRemovedIds?: (ids: string[]) => void
   ): Unsubscribe => {
     const q = query(
       collection(db, 'queue_history'),
@@ -179,6 +182,13 @@ export const useFirestore = () => {
     return onSnapshot(
       q,
       (snapshot) => {
+        if (onRemovedIds) {
+          const removed = snapshot.docChanges()
+            .filter(c => c.type === 'removed')
+            .map(c => c.doc.id)
+          if (removed.length) onRemovedIds(removed)
+        }
+
         const rawItems: QueueHistoryItem[] = snapshot.docs.map(d => ({
           id: d.id,
           ...d.data()

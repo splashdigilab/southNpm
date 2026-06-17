@@ -29,7 +29,12 @@
       "Bash(npx --yes firebase-tools login:list)",
       "Bash(npx --yes firebase-tools deploy --only firestore:indexes --project southnpm-a7f0b)",
       "Bash(awk '/^    clear\\\\\\(\\\\\\) \\\\{/{f=1} f{print NR\": \"$0} f&&/^    \\\\}/{c++; if\\(c>=1\\){exit}}' node_modules/fabric/dist/index.js)",
-      "Bash(grep -rn \"background\\\\|paperBg\\\\|#\\\\|\\\\$\" app/assets/scss/base/_global.scss)"
+      "Bash(grep -rn \"background\\\\|paperBg\\\\|#\\\\|\\\\$\" app/assets/scss/base/_global.scss)",
+      "Bash(grep -n 'const db\\\\|$firestore\\\\|useNuxtApp' app/pages/editor.vue)",
+      "Bash(grep -n 'const db\\\\|$firestore' app/pages/canvas.vue)",
+      "Bash(perl -0pi -e 's/if \\\\\\(dragState\\\\\\) onDragEnd\\\\\\(\\\\\\)/if \\(dragState\\) onDragEnd?.\\(\\)/g; s/if \\\\\\(transformState\\\\\\) onTransformEnd\\\\\\(\\\\\\)/if \\(transformState\\) onTransformEnd?.\\(\\)/g' app/composables/useStickerInteraction.ts)",
+      "Bash(awk 'NR>=655 {printf \"%d: %s\\\\n\", NR, $0}' app/assets/scss/pages/_editor.scss)",
+      "Bash(grep -oE \"[0-9]{3,}\\\\.[0-9]+\" public/font/font-01.svg)"
     ],
     "additionalDirectories": [
       "/Users/kevin/Documents/Github/southNpm/app/composables"

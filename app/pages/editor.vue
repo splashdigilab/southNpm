@@ -31,6 +31,53 @@
         </div>
       </Transition>
 
+      <!-- 字帖選擇 overlay：按「開始」後先選一個沒在牆上的字，已在牆上的字 disabled -->
+      <Transition name="intro-fade">
+        <div v-if="showFontPicker" class="p-editor__font-picker">
+          <div class="p-editor__font-picker-card">
+            <h2 class="p-editor__font-picker-title">選擇你要書寫的字</h2>
+            <p class="p-editor__font-picker-hint">已出現在大螢幕上的字無法選擇，請挑一個還沒人寫過的字。</p>
+
+            <div v-if="fontPickerLoading" class="p-editor__font-picker-loading">
+              <span class="p-index__intro-spinner" aria-hidden="true" />
+              <span>載入中...</span>
+            </div>
+
+            <p v-else-if="noFontAvailable" class="p-editor__font-picker-empty">
+              目前所有的字都已經出現在大螢幕上了，請稍後再試或洽現場人員。
+            </p>
+
+            <div v-else class="p-editor__font-picker-grid">
+              <button
+                v-for="font in FONT_LIST"
+                :key="font"
+                type="button"
+                class="p-editor__font-picker-item"
+                :class="{ 'is-selected': pickerSelectedFont === font }"
+                :disabled="disabledFonts.has(font)"
+                :aria-pressed="pickerSelectedFont === font"
+                @click="pickerSelectedFont = font"
+              >
+                <img :src="getFontUrl(font)" :alt="font" loading="lazy" />
+              </button>
+            </div>
+
+            <button
+              type="button"
+              class="p-index__intro-btn c-btn c-btn--primary p-editor__font-picker-confirm"
+              :disabled="!pickerSelectedFont || fontPickerLoading || confirmingFont"
+              @click="confirmFontSelection"
+            >
+              <span v-if="confirmingFont" class="p-index__intro-btn-inner">
+                <span class="p-index__intro-spinner" aria-hidden="true" />
+                確認中...
+              </span>
+              <span v-else>確認</span>
+            </button>
+          </div>
+        </div>
+      </Transition>
+
     <!-- Tutorial Modal -->
     <EditorTutorialModal v-model="showTutorialModal" />
 
@@ -43,23 +90,11 @@
       @confirm="showTermsModal = false"
     />
 
-    <!-- Draft Modal -->
-    <AppModal
-      v-model="showDraftModal"
-      icon="📝"
-      title="發現草稿"
-      message="您有一份未完成的草稿，要繼續編輯還是重新開始？"
-      confirmText="使用草稿"
-      cancelText="重新開始"
-      @confirm="handleDraftDecision(true)"
-      @cancel="handleDraftDecision(false)"
-    />
-
     <!-- Exit Confirmation Modal -->
     <AppModal
       v-model="showExitModal"
       title="確定離開？"
-      message="目前的進度已經為您自動儲存為草稿。確定要離開編輯器嗎？"
+      message="離開後目前的內容將不會保留，確定要離開編輯器嗎？"
       confirmText="確定離開"
       cancelText="留在本頁"
       @confirm="handleExitConfirm"
@@ -217,10 +252,12 @@
       </div>
     </div>
 
-    <!-- 一鍵清除：在 control-panel 外、tab 上方，與 tab 同顯示條件；v-if + transition 才有漸變 -->
+    <!-- 控制面板區：清除鈕以絕對定位浮在面板正上方，不佔版面、不影響畫布(九宮格底圖)大小 -->
+    <div class="p-editor__panel-wrap">
+    <!-- 一鍵清除：控制面板正上方靠右，書法與貼紙皆顯示；v-if + transition 才有漸變 -->
     <transition name="p-editor-top-actions">
       <div
-        v-if="!drawMode && activeTab !== 'sticker'"
+        v-if="activeTab === 'draw' || activeTab === 'sticker'"
         class="p-editor__top-actions"
       >
         <button
@@ -236,22 +273,6 @@
 
     <!-- Control Panel -->
     <div class="p-editor__control-panel">
-      <!-- Tab Bar（操作繪圖或貼紙時隱藏；v-if + transition 才會有出現/消失動畫） -->
-      <transition name="p-editor-tab-bar">
-        <div v-if="!drawMode && activeTab !== 'sticker'" class="p-editor__tab-bar">
-          <button
-            v-for="tab in EDITOR_TABS"
-            :key="tab.id"
-            class="p-editor__tab-btn"
-            :class="{ 'is-active': activeTab === tab.id }"
-            @click="handleTabClick(tab.id)"
-          >
-            <img :src="tab.bg" :alt="tab.label" class="p-editor__tab-bg" />
-            <span class="p-editor__tab-label">{{ tab.label }}</span>
-          </button>
-        </div>
-      </transition>
-
       <!-- Tab: 書法 -->
       <transition name="p-editor-tab">
         <div v-if="activeTab === 'draw'" class="p-editor__tab-content">
@@ -303,6 +324,7 @@
         </div>
       </transition>
     </div>
+    </div>
 
     <!-- Hidden node for high-res export (html-to-image)：只在實際分享時才掛載，避免長時間佔用 GPU 記憶體
          注意：不能使用 visibility:hidden，否則 html-to-image 會輸出透明圖片；改用 off-screen + opacity:0 -->
@@ -332,9 +354,9 @@
         <button
           type="button"
           class="p-editor__action-btn p-editor__action-btn--primary p-editor__action-btn--complete"
-          @click="activeTab = null"
+          @click="goToStickerStep"
         >
-          完成書法
+          下一步
         </button>
         <button
           type="button"
@@ -342,36 +364,22 @@
           :disabled="!drawCanRedo"
           @click="fabricBrush.redo()"
         >
-          <img src="/resetBtn.png" alt="下一步" class="p-editor__draw-btn-icon p-editor__draw-btn-icon--redo" />
+          <img src="/resetBtn.png" alt="重做" class="p-editor__draw-btn-icon p-editor__draw-btn-icon--redo" />
         </button>
       </template>
 
-      <!-- 貼紙模式：完成（回到 default，編輯框消失） -->
+      <!-- 貼紙模式：左「繼續書寫」(藍) 回到書法，右「上傳大螢幕」(紅) 送出 -->
       <template v-else-if="activeTab === 'sticker'">
         <button
           type="button"
-          class="p-editor__action-btn p-editor__action-btn--primary p-editor__action-btn--full"
-          @click="completeStickerEditing"
+          class="p-editor__action-btn p-editor__action-btn--primary p-editor__action-btn--half"
+          @click="backToDrawing"
         >
-          完成
-        </button>
-      </template>
-
-      <!-- default 狀態：上傳大螢幕（草稿自動儲存） -->
-      <template v-else>
-        <!-- 下載 / 分享便利貼按鈕已隱藏 -->
-        <button
-          v-if="false"
-          type="button"
-          class="p-editor__action-btn p-editor__action-btn--share"
-          :disabled="isSubmitting || isSharing"
-          @click="handleShare"
-        >
-          {{ isSharing ? '處理中...' : '下載 / 分享便利貼' }}
+          繼續書寫
         </button>
         <button
           type="button"
-          class="p-editor__action-btn p-editor__action-btn--primary p-editor__action-btn--full"
+          class="p-editor__action-btn p-editor__action-btn--secondary p-editor__action-btn--half"
           :disabled="isSubmitting || isSharing"
           @click="openSubmitModal"
         >
@@ -384,7 +392,7 @@
 
 <script setup lang="ts">
 import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
-import type { StickerInstance, DraftData, StickyNoteStyle } from '~/types'
+import type { StickerInstance, StickyNoteStyle } from '~/types'
 import { getStickerById, STICKER_LIBRARY } from '~/data/stickers'
 import { EDITOR_TABS, CALLIGRAPHY_BRUSH_COLOR, BRUSH_SIZES, DEFAULT_BRUSH_SIZE } from '~/data/editor-config'
 import { FONT_LIST, getFontUrl } from '~/data/fonts'
@@ -393,6 +401,7 @@ import { useStickerInteraction } from '~/composables/useStickerInteraction'
 import { useCanvasPinch } from '~/composables/useCanvasPinch'
 import { useStorage } from '~/composables/useStorage'
 import { useFirestore } from '~/composables/useFirestore'
+import { useFontReservation } from '~/composables/useFontReservation'
 import { useFabricBrush } from '~/composables/useFabricBrush'
 import { useRoute, useRouter } from 'vue-router'
 import { useHead } from '#imports'
@@ -415,7 +424,9 @@ const route = useRoute()
 const router = useRouter()
 const { $firestore } = useNuxtApp()
 const db = $firestore as any
-const { saveDraft, loadDraft, clearDraft, saveToken, loadToken, clearToken } = useStorage()
+// 字帖預約：選好字就佔用，讓其他編輯器選不到；送出/離開/TTL 到期才釋放
+const fontReservation = useFontReservation()
+const { saveToken, loadToken, clearToken } = useStorage()
 
 // Loading state
 const loading = ref(true)
@@ -431,8 +442,8 @@ const onStartClick = () => {
   }
   showIntroOverlay.value = false
 
-  // 顯示教學或草稿邏輯移至開始之後
-  checkInitialModals()
+  // 按「開始」後先讓使用者挑選一個沒在牆上的字，確認後才進入編輯器
+  openFontPicker()
 }
 
 // Editor State
@@ -449,8 +460,13 @@ const WALL_CAPACITY = 144
 
 /**
  * 讀取目前「已上傳」所使用的字帖 id 集合，用於避免描紅字帖與牆上重複。
- * 直接讀 Firestore 權威來源（queue_history 最新 144 筆 + queue_pending 待播），
- * 不依賴 system/current_state（那只有大螢幕開著時才會更新，牆沒開就會抓不到而撞字）。
+ * 取「三方聯集」當權威來源：
+ *   1. queue_history 最新 144 筆 + queue_pending 待播（不靠大螢幕也能避字）
+ *   2. system/current_state.live_grid（大螢幕「此刻實際顯示」的字，含聚光中那張）
+ * 取聯集（越多越保守、只會多避不會撞）：history/pending 重建出的格陣有時會與牆上實際
+ * 顯示有出入（去重、視窗位移、聚光佇列尚未落格…），把 live_grid 併進來即可確保
+ * 「canvas 上有的字」一定被排除。current_state 牆沒開時可能過時，但過時只會多排除、
+ * 不會造成撞字，安全。
  */
 const getUsedFonts = async (): Promise<Set<string>> => {
   const used = new Set<string>()
@@ -460,56 +476,143 @@ const getUsedFonts = async (): Promise<Set<string>> => {
       if (typeof f === 'string' && f) used.add(f)
     }
   }
-  try {
-    // 加上 timeout：離線/弱網/冷啟動時 getDocs 可能長時間不回應，不能卡住描紅底圖的顯示。
-    // 逾時走 fallback（純隨機），常見的冷啟動逾時只印 debug、不噴錯誤堆疊。
-    const TIMEOUT = Symbol('timeout')
-    const historyQ = query(
-      collection(db, 'queue_history'),
-      orderBy('playedAt', 'desc'),
-      limit(WALL_CAPACITY)
-    )
-    const pendingQ = query(collection(db, 'queue_pending'), limit(WALL_CAPACITY))
-    const result = await Promise.race([
-      Promise.all([getDocs(historyQ), getDocs(pendingQ)]),
-      new Promise<typeof TIMEOUT>(resolve => setTimeout(() => resolve(TIMEOUT), 6000))
+  const addFont = (f: unknown) => { if (typeof f === 'string' && f) used.add(f) }
+
+  // 每個來源各自加上 timeout，避免離線/弱網/冷啟動卡住描紅底圖的顯示
+  const withTimeout = <T,>(p: Promise<T>, ms = 6000): Promise<T> =>
+    Promise.race([
+      p,
+      new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
     ])
-    if (result === TIMEOUT) {
-      console.debug('[Editor] 讀取已用字逾時，描紅字帖改純隨機')
-      return used
-    }
-    const [historySnap, pendingSnap] = result
-    collectFonts(historySnap.docs)
-    collectFonts(pendingSnap.docs)
-  } catch (e) {
-    // 讀不到（權限或網路）就視為無已用字，純隨機挑選
-    console.warn('[Editor] 讀取已用字失敗，描紅字帖改純隨機', e)
+
+  const historyQ = query(
+    collection(db, 'queue_history'),
+    orderBy('playedAt', 'desc'),
+    limit(WALL_CAPACITY)
+  )
+  const pendingQ = query(collection(db, 'queue_pending'), limit(WALL_CAPACITY))
+
+  // 三個來源獨立讀取（allSettled）：任一失敗都不影響其他來源貢獻，
+  // 不會像 Promise.all 那樣一個出錯就整包變空集合→退回純隨機而撞字。
+  //   1. system/current_state.live_grid：大螢幕「此刻實際在牆上」的字（最權威，含聚光中那張）。
+  //      canvas 格陣是累積式、只增不減，舊字會掉出 queue_history 的最新 144 筆視窗卻仍黏在牆上，
+  //      只有這份廣播能完整反映，所以它是避免撞字的關鍵來源。
+  //   2+3. queue_history 最新 144 + queue_pending：牆沒開／廣播過時時的後備來源。
+  const results = await Promise.allSettled([
+    withTimeout(getDoc(doc(db, 'system', 'current_state'))),
+    withTimeout(getDocs(historyQ)),
+    withTimeout(getDocs(pendingQ))
+  ])
+
+  const [stateRes, historyRes, pendingRes] = results
+  if (stateRes.status === 'fulfilled') {
+    const snap = stateRes.value
+    const liveGrid = snap.exists() ? (snap.data() as any)?.live_grid : null
+    if (Array.isArray(liveGrid)) for (const g of liveGrid) addFont(g?.style?.font)
+  } else {
+    console.debug('[Editor] 讀取 current_state 失敗，改用 history/pending 避字', stateRes.reason)
   }
+  if (historyRes.status === 'fulfilled') collectFonts(historyRes.value.docs)
+  if (pendingRes.status === 'fulfilled') collectFonts(pendingRes.value.docs)
+
+  if (!used.size) console.debug('[Editor] 三方來源皆無已用字，描紅字帖改純隨機')
   return used
 }
 
-/** 純隨機挑一張字帖 */
-const pickRandomFont = (): string | null => {
-  const pool = FONT_LIST as readonly string[]
-  return pool[Math.floor(Math.random() * pool.length)] ?? null
+/** Fisher–Yates 洗牌（不改動原陣列）：讓逐一嘗試佔用的順序隨機 */
+const shuffle = <T,>(arr: readonly T[]): T[] => {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j]!, a[i]!]
+  }
+  return a
 }
 
 /**
- * 隨機挑一張字帖，盡量避開螢幕上已有的字。
- * 重點：先立刻挑一張並顯示（描紅底圖一定會出現，不被 Firestore 延遲卡住），
- * 之後再讀取 LED 牆上已用字；只有在「剛好撞到已用字」時才換一張，避免無謂的閃動。
+ * 預先讀取「牆上已用字」：在 loading／活動介紹頁階段（按「開始」前）就先發動，
+ * 讓使用者閱讀規範、勾選同意的這段時間把 Firestore 讀完，按「開始」打開字帖選擇時
+ * 不需再等待，可直接標出哪些字已被用掉。
  */
-const pickUniqueFont = async () => {
-  const initial = pickRandomFont()
-  selectedFontId.value = initial
+let usedFontsPromise: Promise<Set<string>> | null = null
+const prefetchUsedFonts = (): Promise<Set<string>> => {
+  if (!usedFontsPromise) usedFontsPromise = getUsedFonts()
+  return usedFontsPromise
+}
 
-  const used = await getUsedFonts()
-  if (initial && used.has(initial)) {
-    const available = FONT_LIST.filter(id => !used.has(id))
-    if (available.length > 0) {
-      selectedFontId.value = available[Math.floor(Math.random() * available.length)] ?? initial
-    }
+/* ─── 字帖選擇（按開始後手動選一個沒在牆上的字）─── */
+const showFontPicker = ref(false)
+const fontPickerLoading = ref(false)
+const confirmingFont = ref(false)
+/** 已被用掉（牆上＋別人預約）而不可選的字 */
+const disabledFonts = ref<Set<string>>(new Set())
+/** 目前選取的字（預設為清單中第一個可選的字） */
+const pickerSelectedFont = ref<string | null>(null)
+/** 所有字都被用掉、目前無字可選（牆已滿） */
+const noFontAvailable = computed(() => !fontPickerLoading.value && disabledFonts.value.size >= FONT_LIST.length)
+
+/** 重新計算不可選字集合，並把選取預設為第一個可選的字 */
+const refreshDisabledFonts = async (fresh = false) => {
+  const [used, reserved] = await Promise.all([
+    fresh ? getUsedFonts() : prefetchUsedFonts(),
+    fontReservation.getReservedFonts()
+  ])
+  disabledFonts.value = new Set<string>([...used, ...reserved])
+  // 預設選最前面可被選擇的字
+  if (!pickerSelectedFont.value || disabledFonts.value.has(pickerSelectedFont.value)) {
+    pickerSelectedFont.value = FONT_LIST.find(id => !disabledFonts.value.has(id)) ?? null
   }
+}
+
+/** 按「開始」後打開字帖選擇：載入不可選清單並預設選第一個可選的字 */
+const openFontPicker = async () => {
+  showFontPicker.value = true
+  fontPickerLoading.value = true
+  pickerSelectedFont.value = null
+  await refreshDisabledFonts()
+  fontPickerLoading.value = false
+}
+
+/**
+ * 按「確認」：原子佔用選取的字。
+ * 成功 → 進入編輯器書寫；剛好被別人選走 → 重新整理可選清單並提示重選。
+ */
+const confirmFontSelection = async () => {
+  const font = pickerSelectedFont.value
+  if (!font || confirmingFont.value || disabledFonts.value.has(font)) return
+  confirmingFont.value = true
+  const claimed = await fontReservation.claimFont([font])
+  if (!claimed) {
+    await refreshDisabledFonts(true)
+    confirmingFont.value = false
+    showAlert('這個字剛剛被選走了，請選擇其他字', '請重新選擇', '✍️')
+    return
+  }
+  selectedFontId.value = claimed
+  fontReservation.startHeartbeat()
+  confirmingFont.value = false
+  showFontPicker.value = false
+  enterEditor()
+}
+
+/**
+ * 送出前確保字帖仍是自己的：重新搶佔目前 selectedFontId。
+ * 搶得回（還是自己的／已過期釋放）→ 沿用；被別人佔走 → 讀最新已用字＋預約，
+ * 從可選池當場換一個並佔起來。字帖只決定牆上格位，換字對使用者內容無感。
+ */
+const ensureFontBeforeSubmit = async () => {
+  const current = selectedFontId.value
+  if (current && (await fontReservation.claimFont([current]))) return // 還是自己的
+
+  const [used, reserved] = await Promise.all([
+    getUsedFonts(),
+    fontReservation.getReservedFonts()
+  ])
+  const exclude = new Set<string>([...used, ...reserved])
+  const candidates = shuffle(FONT_LIST.filter(id => !exclude.has(id)))
+  let claimed = await fontReservation.claimFont(candidates)
+  if (!claimed) claimed = await fontReservation.claimFont(shuffle(FONT_LIST))
+  if (claimed) selectedFontId.value = claimed
 }
 
 // 每個物件（貼紙）各自疊放順序：點選時 bringToFront，完成後該物件維持最頂層
@@ -521,9 +624,15 @@ const bringToFront = (id: string) => {
   objectZOrder.value = { ...objectZOrder.value, [id]: zOrderCounter }
 }
 
-const completeStickerEditing = () => {
+/** 書法頁「下一步」：進入貼紙編輯（watch 會自動收起繪圖、保存筆畫） */
+const goToStickerStep = () => {
+  activeTab.value = 'sticker'
+}
+
+/** 貼紙頁「繼續書寫」：清掉選取並回到書法頁 */
+const backToDrawing = () => {
   selectedStickerId.value = null
-  activeTab.value = null
+  activeTab.value = 'draw'
 }
 
 const canvasRef = ref<HTMLElement | null>(null)
@@ -540,7 +649,6 @@ const showHorizontalCenterGuide = ref(false)
 const activeTab = ref<'draw' | 'sticker' | null>(null)
 
 const transformingStickerId = ref<string | null>(null)
-const showDraftModal = ref(false)
 const showTutorialModal = ref(false)
 const showExitModal = ref(false)
 const showSubmitModal = ref(false)
@@ -640,32 +748,21 @@ const showStickerEditFrame = computed(() => {
   return !!selectedStickerId.value && activeTab.value !== 'draw'
 })
 
-// ── 繪圖存檔防抖
-let drawSaveTimer: ReturnType<typeof setTimeout> | null = null
-
-// 僅在有實際筆畫時更新 drawingData；saveImmediately=true 時略過防抖（離開繪圖模式時使用）
-const syncDrawingDataFromFabric = (saveImmediately = false) => {
+// 僅在有實際筆畫時更新 drawingData（供預覽與上傳使用）
+const syncDrawingDataFromFabric = () => {
   if (!fabricBrush.canUndo()) {
     return
   }
   const data = fabricBrush.exportToDataURL()
   if (data && data !== drawingData.value) {
     drawingData.value = data
-    if (saveImmediately) {
-      if (drawSaveTimer) { clearTimeout(drawSaveTimer); drawSaveTimer = null }
-      saveDraftData()
-    } else {
-      if (drawSaveTimer) clearTimeout(drawSaveTimer)
-      drawSaveTimer = setTimeout(() => {
-        drawSaveTimer = null
-        saveDraftData()
-      }, 1500)
-    }
   }
 }
 
 const fabricBrush = useFabricBrush(() => {
   syncDrawingDataFromFabric()
+  // 下筆視為一次活動，避免長時間作畫期間字帖被閒置回收
+  fontReservation.markActivity()
 })
 // 切換 tab 時同步繪圖模式
 watch(activeTab, (tab) => {
@@ -678,8 +775,8 @@ watch(activeTab, (tab) => {
     bringToFront('drawing-layer')
   } else {
     if (drawMode.value) {
-      // 離開繪圖模式：立即存檔（saveImmediately=true），不用防抖，避免資料遺失
-      syncDrawingDataFromFabric(true)
+      // 離開繪圖模式：把最新筆畫同步到 drawingData
+      syncDrawingDataFromFabric()
       fabricBrush.setDrawingMode(false)
       // 最小化畫布：釋放 ~1.4MB GPU backing store
       fabricBrush.minimizeCanvas()
@@ -735,7 +832,6 @@ const addSticker = (stickerType: string) => {
     rotation: (Math.random() - 0.5) * 30
   }
   stickers.value.push(newSticker)
-  saveDraftData()
   // 選取新貼紙並切到貼紙 tab，讓編輯框出現
   selectedStickerId.value = newSticker.id
   bringToFront(newSticker.id)
@@ -747,32 +843,9 @@ const selectSticker = (id: string) => {
   bringToFront(id)
 }
 
-// Tab 點擊處理
-const handleTabClick = (tabId: string) => {
-  activeTab.value = tabId as any
-}
-
 const deselectAll = () => {
   if (lastCanvasDragEndAt.value && Date.now() - lastCanvasDragEndAt.value < 400) return
   selectedStickerId.value = null
-}
-
-// saveDraftData 需在 composable 之前定義（作為 callback）
-const saveDraftData = () => {
-  // 如果沒有任何有效內容（貼紙、繪圖皆為空），不存草稿
-  const hasContent =
-    stickers.value.length > 0 ||
-    !!drawingData.value
-  if (!hasContent) return
-
-  const draft: DraftData = {
-    stickers: stickers.value,
-    drawing: drawingData.value ?? undefined,
-    objectLayerOrder: { ...objectZOrder.value },
-    font: selectedFontId.value ?? undefined,
-    timestamp: Date.now()
-  }
-  saveDraft(draft)
 }
 
 const {
@@ -789,8 +862,6 @@ const {
   stickers,
   draggingStickerId,
   transformingStickerId,
-  onStickerTransformEnd: saveDraftData,
-  onStickerDragEnd: saveDraftData,
   showVerticalCenterGuide,
   showHorizontalCenterGuide
 })
@@ -806,15 +877,12 @@ const {
   draggingStickerId,
   transformingStickerId,
   selectSticker,
-  onDragEnd: saveDraftData,
-  onTransformEnd: saveDraftData,
   isTwoFingerGesture
 })
 
 const removeSticker = (id: string) => {
   stickers.value = stickers.value.filter(s => s.id !== id)
   selectedStickerId.value = null
-  saveDraftData()
 }
 
 // touchstart 上刪除貼紙：捲動中 touchstart 可能 cancelable=false，需先判斷再 preventDefault，
@@ -822,56 +890,6 @@ const removeSticker = (id: string) => {
 const onDeleteStickerTouch = (e: TouchEvent, id: string) => {
   if (e.cancelable) e.preventDefault()
   removeSticker(id)
-}
-
-const loadDraftData = async (draft: DraftData) => {
-  stickers.value = draft.stickers
-  drawingData.value = draft.drawing ?? null
-  // 續編草稿：沿用草稿當時的描紅字帖，維持同一個字
-  if (draft.font) selectedFontId.value = draft.font
-
-  await nextTick()
-  if (draft.drawing) {
-    await nextTick()
-    fabricBrush.loadFromDataURL(draft.drawing)
-  }
-
-  // 還原物件前後順序
-  const stickerIds = stickers.value.map(s => s.id)
-  const orderFromDraft = draft.objectLayerOrder && Object.keys(draft.objectLayerOrder).length > 0
-    ? { ...draft.objectLayerOrder }
-    : null
-
-  if (orderFromDraft) {
-    const restored: Record<string, number> = {}
-    for (const id of [...stickerIds, 'drawing-layer']) {
-      const v = orderFromDraft[id]
-      const n = typeof v === 'number' && !Number.isNaN(v) ? v : Number(v)
-      if (!Number.isNaN(n)) restored[id] = n
-    }
-    if (Object.keys(restored).length > 0) {
-      for (const id of stickerIds) {
-        if (restored[id] == null) {
-          const maxVal = Math.max(0, ...Object.values(restored))
-          restored[id] = maxVal + 1
-        }
-      }
-      objectZOrder.value = { ...restored }
-      zOrderCounter = Math.max(0, ...Object.values(restored))
-      await nextTick()
-    } else {
-      applyDefaultLayerOrder(stickerIds)
-    }
-  } else {
-    applyDefaultLayerOrder(stickerIds)
-  }
-}
-
-function applyDefaultLayerOrder(stickerIds: string[]) {
-  const next: Record<string, number> = {}
-  stickerIds.forEach((id, i) => { next[id] = i + 1 })
-  objectZOrder.value = next
-  zOrderCounter = stickerIds.length
 }
 
 const resetEditorToInitial = () => {
@@ -893,33 +911,9 @@ const handleClearAll = () => {
 
 const confirmClearAll = () => {
   resetEditorToInitial()
-  clearDraft()
   showClearAllModal.value = false
   // 清空只清內容，保留目前的描紅字帖（不換字）；清完直接回到「書法」狀態可繼續書寫
   activeTab.value = 'draw'
-}
-
-const handleDraftDecision = async (useDraft: boolean) => {
-  if (useDraft) {
-    showDraftModal.value = false
-    const draft = loadDraft()
-    if (draft) {
-      await nextTick()
-      await new Promise<void>(r => requestAnimationFrame(() => r()))
-      await loadDraftData(draft)
-    }
-    // 草稿沒有記錄字帖（舊草稿）時，補挑一張
-    if (!selectedFontId.value) pickUniqueFont()
-    // 續編草稿也直接停在「書法」
-    activeTab.value = 'draw'
-  } else {
-    resetEditorToInitial()
-    clearDraft()
-    showDraftModal.value = false
-    // 重新開始：換一張新的描紅字帖，並停在「書法」
-    pickUniqueFont()
-    activeTab.value = 'draw'
-  }
 }
 
 const isSubmitting = ref(false)
@@ -1223,14 +1217,21 @@ const confirmSubmit = async () => {
       return
     }
 
-    // 2. 狀態正確(valid)或無法判別時，嘗試正式送出
+    // 2. 送出前重新搶佔字帖：閒置期間字可能已被釋放或被別人拿走，重搶以免跟牆上撞字。
+    //    搶不回（已被別人佔走）就當場換一個可用字——字帖只決定牆上的格位，不影響使用者內容。
+    await ensureFontBeforeSubmit()
+
+    // 3. 狀態正確(valid)或無法判別時，嘗試正式送出
     await createNote(
       { content: previewNoteData.value.content, style: previewNoteData.value.style },
       tokenForSubmit
     )
 
-    // 上傳成功：清除草稿與快取的 Token
-    clearDraft()
+    // 送出成功：字已變成正式便利貼，預約功成身退，釋放讓資源歸還
+    fontReservation.stopHeartbeat()
+    void fontReservation.releaseFont()
+
+    // 上傳成功：清除快取的 Token
     if (!tokenRequiredForSubmit.value) {
       saveTokenDisabledSubmitTimestamp()
     }
@@ -1368,7 +1369,6 @@ const goBack = () => {
 }
 
 const handleExitConfirm = () => {
-  saveDraftData()
   showExitModal.value = false
   router.push('/')
 }
@@ -1418,34 +1418,34 @@ const preloadImage = (src: string) =>
 
 const preloadEditorAssets = () => Promise.all(EDITOR_ASSETS.map(preloadImage))
 
-const checkInitialModals = async () => {
+/** 字帖選好（已佔用）後進入編輯器：顯示教學、初始化手繪、停在「書法」 */
+const enterEditor = async () => {
   await nextTick()
-  // 檢查草稿（僅顯示 modal，不預先載入內容；等使用者選擇「使用草稿」才載入）
-  const existingDraft = loadDraft()
-  if (existingDraft) {
-    showDraftModal.value = true
-    // 字帖等使用者選擇「使用草稿/重新開始」後再決定（handleDraftDecision）
-  } else {
-    // 沒有草稿時，檢查是否看過教學
-    const hasSeen = localStorage.getItem('hasSeenWillMusicTutorial')
-    if (!hasSeen) {
-      showTutorialModal.value = true
-    }
-    // 全新開始：隨機挑一張描紅字帖（避開 LED 牆上已有的字）
-    pickUniqueFont()
+  // 第一次進來（沒看過教學）顯示教學
+  const hasSeen = localStorage.getItem('hasSeenWillMusicTutorial')
+  if (!hasSeen) {
+    showTutorialModal.value = true
   }
 
   // 初始化 Fabric 手繪
   initFabricBrush()
 
   // 一開始就進入「書法」：用執行期切換（等同點分頁），確保介面/按鈕與一般進入書法一致
-  if (!existingDraft) activeTab.value = 'draw'
+  activeTab.value = 'draw'
 }
+
+// 分頁關閉 / 切走時盡力即時釋放佔用的字帖（抓不到就靠 reservation 的 TTL 回收）
+const releaseReservationBeacon = () => { fontReservation.releaseFontBeacon() }
 
 onMounted(async () => {
   // 在背景預載 Fabric.js（不 await，讓它在使用者閱讀規範的期間下載完畢）
   if (import.meta.client) {
     import('fabric').catch(() => {})
+    // 在背景先讀牆上已用字（不 await）：讓使用者閱讀活動介紹的期間就讀完，
+    // 按「開始」打開字帖選擇時可立即標出哪些字已被用掉，不必等待。
+    prefetchUsedFonts()
+    window.addEventListener('beforeunload', releaseReservationBeacon)
+    window.addEventListener('pagehide', releaseReservationBeacon)
   }
 
   // waitForImages：加入 3 秒超時保護，防止 iOS 上部分圖片永遠不觸發 load/error 導致卡死
@@ -1536,9 +1536,15 @@ onMounted(async () => {
 
 onUnmounted(() => {
   if (resizeObserver) resizeObserver.disconnect()
-  if (drawSaveTimer) { clearTimeout(drawSaveTimer); drawSaveTimer = null; saveDraftData() }
   unsubTokenRequirement?.()
   unsubTokenRequirement = null
   fabricBrush.dispose()
+  // 離開編輯器：釋放佔用的字帖（沒送出就還回去給別人選）
+  fontReservation.stopHeartbeat()
+  void fontReservation.releaseFont()
+  if (import.meta.client) {
+    window.removeEventListener('beforeunload', releaseReservationBeacon)
+    window.removeEventListener('pagehide', releaseReservationBeacon)
+  }
 })
 </script>

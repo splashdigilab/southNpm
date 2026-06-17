@@ -314,12 +314,22 @@ body.is-editor-page #app {
     align-items: end;
   }
 
+  // 控制面板包層：作為清除鈕的定位基準，本身高度＝control-panel 高度（不額外佔空間）
+  &__panel-wrap {
+    position: relative;
+    flex-shrink: 0;
+  }
+
   &__top-actions {
+    // 絕對定位浮在 control-panel 正上方靠右：不佔版面流，所以不會壓縮畫布(九宮格底圖)。
+    // bottom: 100% 貼齊面板上緣，書法/貼紙面板高度不同也都自動對齊，不需寫死高度。
     position: absolute;
-    right: 0.5rem;
-    bottom: calc(72px + 56px + 0.5rem); // 落在 control-panel 上方，與 tab 區有距離
+    bottom: 100%;
+    right: 12px; // 對齊 control-panel 右緣（面板左右 margin 12px）
+    margin-bottom: 0.5rem; // 與面板上緣保持距離
     display: flex;
     justify-content: flex-end;
+    align-items: center;
     z-index: 10;
   }
 
@@ -645,6 +655,12 @@ body.is-editor-page #app {
     &--full {
       flex-grow: 1;
     }
+
+    // 貼紙頁左右各一顆（繼續書寫 / 上傳大螢幕），平分寬度
+    &--half {
+      flex: 1 1 0;
+      min-width: 0;
+    }
   }
 
   // 繪圖模式圓形按鈕（上一步/下一步）- 固定尺寸確保正圓，will-red，與完成按鈕同高
@@ -676,4 +692,145 @@ body.is-editor-page #app {
     }
   }
 
+}
+
+/* ========== 字帖選擇 overlay（按開始後挑一個沒在牆上的字） ========== */
+.p-editor__font-picker {
+  position: fixed;
+  inset: 0;
+  z-index: 500;
+  max-height: 100dvh;
+  background-color: #f5f5f5;
+  background-image: url('/editorBg.webp');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  box-sizing: border-box;
+}
+
+.p-editor__font-picker-card {
+  position: relative;
+  z-index: 10;
+  width: 100%;
+  max-width: 440px;
+  max-height: calc(100dvh - 2rem);
+  display: flex;
+  flex-direction: column;
+  text-align: center;
+  background: #f5eede;
+  border: 1px solid rgba(120, 110, 90, 0.18);
+  padding: 1.5rem 1rem;
+  border-radius: 0.75rem;
+  box-shadow: 0 10px 40px rgba(0, 0, 0, 0.1);
+  box-sizing: border-box;
+}
+
+.p-editor__font-picker-title {
+  font-size: 1.4rem;
+  font-weight: bold;
+  color: var(--color-text, #333);
+  margin: 0 0 0.5rem;
+  flex-shrink: 0;
+}
+
+.p-editor__font-picker-hint {
+  font-size: 0.9rem;
+  color: var(--color-text-light, #555);
+  line-height: 1.5;
+  margin: 0 0 1rem;
+  flex-shrink: 0;
+}
+
+.p-editor__font-picker-loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.5rem;
+  flex: 1 1 auto;
+  min-height: 8rem;
+  color: var(--color-text-light, #555);
+
+  .p-index__intro-spinner {
+    border-color: rgba(74, 53, 38, 0.3);
+    border-top-color: #4a3526;
+  }
+}
+
+.p-editor__font-picker-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+  display: grid;
+  // 固定 76px 方格 + 固定列高，徹底避免格子被拉成長條（不依賴 aspect-ratio）
+  grid-template-columns: repeat(auto-fill, 76px);
+  grid-auto-rows: 76px;
+  justify-content: center;
+  gap: 0.5rem;
+  padding: 0.25rem;
+  margin-bottom: 1rem;
+}
+
+.p-editor__font-picker-item {
+  width: 76px;
+  height: 76px;
+  padding: 0;
+  // 九宮格稿紙底圖（與書寫畫布、大螢幕格子一致）
+  background: url('/paper.webp') center / 100% 100% no-repeat;
+  border: 1px solid rgba(120, 110, 90, 0.22);
+  border-radius: 0.5rem;
+  overflow: hidden;
+  cursor: pointer;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease, transform 0.1s ease;
+
+  img {
+    display: block;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+  }
+
+  &.is-selected {
+    border-color: #4a3526;
+    box-shadow: 0 0 0 2px #4a3526 inset;
+  }
+
+  &:disabled {
+    cursor: not-allowed;
+
+    // 底圖維持完整不淡化，只把字灰階＋淡化來表示不可選
+    img {
+      opacity: 0.4;
+      filter: grayscale(1);
+    }
+  }
+}
+
+.p-editor__font-picker-empty {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 8rem;
+  margin: 0 0 1rem;
+  padding: 0 1rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  color: var(--color-text-light, #555);
+}
+
+.p-editor__font-picker-confirm {
+  width: 80%;
+  flex-shrink: 0;
+}
+
+// 編輯器的「開始」與選字頁「確認」改用紅色卷軸（覆蓋預設的藍色 intro-btn）
+.p-editor__intro-overlay .p-index__intro-btn,
+.p-editor__font-picker .p-editor__font-picker-confirm {
+  @include btn.scroll-button-red;
 }

@@ -13,19 +13,6 @@ export interface StickerInstance {
 }
 
 /**
- * 草稿資料
- */
-export interface DraftData {
-  stickers: StickerInstance[]
-  drawing?: string // 手繪內容 data URL
-  /** 各物件 id 的疊放順序（與編輯器 objectZOrder 一致）；載入草稿時還原 */
-  objectLayerOrder?: Record<string, number>
-  /** 本次描紅字帖 id（public/font），用於草稿續編時維持同一個字 */
-  font?: string
-  timestamp: number
-}
-
-/**
  * 便利貼樣式配置
  */
 export interface StickyNoteStyle {

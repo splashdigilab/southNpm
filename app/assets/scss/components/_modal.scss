@@ -81,12 +81,16 @@
     }
 }
 
-// Modal Buttons（卷軸樣式：紅/藍）
+// Modal Buttons（卷軸樣式）
+// 規則：左右兩顆並排時，左邊一律藍、右邊一律紅。
+//   AppModal / EditorTutorialModal 的版面都是「左＝取消(secondary)、右＝確認(primary/danger)」，
+//   所以 secondary（左）設藍；右邊那顆用下方的相鄰選擇器一律改紅。
+//   單顆按鈕的 modal（只有 confirm）維持藍色，不受影響。
 .c-button {
     @include btn.btn-action;
 
     &--secondary {
-        @include btn.scroll-button-red;
+        @include btn.scroll-button-blue;
     }
 
     &--primary {
@@ -96,4 +100,9 @@
     &--danger {
         @include btn.scroll-button-red;
     }
+}
+
+/* 兩顆並排時：右側按鈕（跟在左側 secondary 之後）一律紅 */
+.c-modal__actions .c-button--secondary ~ .c-button {
+    @include btn.scroll-button-red;
 }

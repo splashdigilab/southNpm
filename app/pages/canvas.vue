@@ -207,6 +207,40 @@ function applyHistory(items: Note[]) {
   if (queued) void processSpotlightQueue()
 }
 
+/**
+ * 處理 queue_history 中「移出快照」的文件：區分「真的被刪」與「被擠出 limit 視窗」。
+ * 只有經 getDoc 確認文件確實不存在（＝被後台刪除）時，才把它從牆上格陣／聚光區拿掉，
+ * 並從 knownIds 移除（之後若同字重新上傳可再次播放聚光）。拿掉後重新廣播，
+ * 讓編輯器讀到的 live_grid 不再含此字，該字帖即釋放回可選池。
+ */
+async function handleRemovedHistoryIds(ids: string[]) {
+  let changed = false
+  for (const id of ids) {
+    try {
+      const snap = await getDoc(doc(db, 'queue_history', id))
+      if (snap.exists()) continue // 文件還在，只是離開視窗 → 牆面不動
+    } catch {
+      continue // 確認失敗就保守不動，避免誤刪牆上的字
+    }
+    const matches = (n: Note | null | undefined): boolean =>
+      !!n && (n.id === id || n.token === id || getId(n) === id)
+    for (let i = 0; i < gridNotes.length; i++) {
+      const n = gridNotes[i]
+      if (matches(n)) {
+        knownIds.delete(getId(n))
+        gridNotes[i] = null
+        changed = true
+      }
+    }
+    if (matches(spotlightNote.value)) {
+      knownIds.delete(getId(spotlightNote.value))
+      spotlightNote.value = null
+      changed = true
+    }
+  }
+  if (changed) broadcastState()
+}
+
 async function processSpotlightQueue() {
   if (spotlightBusy || !spotQueue.length) return
   spotlightBusy = true
@@ -383,9 +417,12 @@ const beginCanvasSession = async () => {
   await nextTick()
 
   // 載入畫面：歷史驅動格陣（最多 144 格）
-  unsubHistory = listenToHistory(TOTAL_CELLS, (items) => {
-    applyHistory(items as Note[])
-  })
+  unsubHistory = listenToHistory(
+    TOTAL_CELLS,
+    (items) => { applyHistory(items as Note[]) },
+    // 後台刪除便利貼時，把它從牆上拿掉並重新廣播，讓該字帖釋放回編輯器可選池
+    (removedIds) => { void handleRemovedHistoryIds(removedIds) }
+  )
 
   // pending 即時轉入歷史（轉入後會經由 history listener 進入格陣）
   unsubPending = listenToPendingQueue((items) => {

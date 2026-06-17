@@ -19,8 +19,10 @@ export interface UseCanvasPinchOptions {
   stickers: Ref<StickerInstance[]>
   draggingStickerId: Ref<string | null>
   transformingStickerId: Ref<string | null>
-  onStickerTransformEnd: () => void
-  onStickerDragEnd: () => void
+  /** 貼紙縮放/旋轉結束的 callback（可選） */
+  onStickerTransformEnd?: () => void
+  /** 貼紙拖曳結束的 callback（可選） */
+  onStickerDragEnd?: () => void
   /** 顯示垂直中心參考線（可選） */
   showVerticalCenterGuide?: Ref<boolean>
   /** 顯示水平中心參考線（可選） */
@@ -207,7 +209,7 @@ export function useCanvasPinch(options: UseCanvasPinchOptions) {
     const onTouchEnd = () => {
       if (pinchState) {
         transformingStickerId.value = null
-        onStickerTransformEnd()
+        onStickerTransformEnd?.()
       }
       pinchState = null
       isTwoFingerGesture.value = false
@@ -319,7 +321,7 @@ export function useCanvasPinch(options: UseCanvasPinchOptions) {
         lastCanvasDragEndAt.value = Date.now()
         clearCenterGuides()
         draggingStickerId.value = null
-        onStickerDragEnd()
+        onStickerDragEnd?.()
       }
       canvasDragState = null
       if (isTouch) {

@@ -15,8 +15,10 @@ export interface UseStickerInteractionOptions {
   draggingStickerId: Ref<string | null>
   transformingStickerId: Ref<string | null>
   selectSticker: (id: string) => void
-  onDragEnd: () => void
-  onTransformEnd: () => void
+  /** 拖曳結束的 callback（可選） */
+  onDragEnd?: () => void
+  /** 縮放/旋轉結束的 callback（可選） */
+  onTransformEnd?: () => void
   /** 雙指手勢中時不切換選取（由 useCanvasPinch 提供） */
   isTwoFingerGesture?: Ref<boolean>
 }
@@ -74,7 +76,7 @@ export function useStickerInteraction(options: UseStickerInteractionOptions) {
     }
 
     const onMouseUp = () => {
-      if (dragState) onDragEnd()
+      if (dragState) onDragEnd?.()
       dragState = null
       draggingStickerId.value = null
       document.removeEventListener('mousemove', onMouseMove)
@@ -120,7 +122,7 @@ export function useStickerInteraction(options: UseStickerInteractionOptions) {
     }
 
     const onTouchEnd = () => {
-      if (dragState) onDragEnd()
+      if (dragState) onDragEnd?.()
       dragState = null
       draggingStickerId.value = null
       el.removeEventListener('touchmove', onTouchMove, { capture: true })
@@ -184,7 +186,7 @@ export function useStickerInteraction(options: UseStickerInteractionOptions) {
     }
 
     const onMouseUp = () => {
-      if (transformState) onTransformEnd()
+      if (transformState) onTransformEnd?.()
       transformState = null
       transformingStickerId.value = null
       document.removeEventListener('mousemove', onMouseMove)
@@ -244,7 +246,7 @@ export function useStickerInteraction(options: UseStickerInteractionOptions) {
     }
 
     const onTouchEnd = () => {
-      if (transformState) onTransformEnd()
+      if (transformState) onTransformEnd?.()
       transformState = null
       transformingStickerId.value = null
       document.removeEventListener('touchmove', onTouchMove, { capture: true })
