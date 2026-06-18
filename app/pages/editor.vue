@@ -189,7 +189,7 @@
             :class="{ 'is-active': drawMode }"
             :style="{
               pointerEvents: drawMode ? 'auto' : 'none',
-              zIndex: getObjectZIndex('drawing-layer')
+              zIndex: 0
             }"
           >
             <!-- Fabric.js canvas：始終留在 DOM（init 需要），縮小後視覺空白 -->
@@ -772,7 +772,7 @@ watch(activeTab, (tab) => {
     // 恢復畫布尺寸（從 1×1 最小化還原為 600×600，重新分配 GPU backing store）
     fabricBrush.restoreCanvas()
     fabricBrush.setDrawingMode(true)
-    bringToFront('drawing-layer')
+    // 不再把繪圖層提到最前：繪圖層固定 z-index 0，貼紙(z≥1)永遠在字的前面
   } else {
     if (drawMode.value) {
       // 離開繪圖模式：把最新筆畫同步到 drawingData
