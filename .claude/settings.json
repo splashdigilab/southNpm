@@ -34,10 +34,21 @@
       "Bash(grep -n 'const db\\\\|$firestore' app/pages/canvas.vue)",
       "Bash(perl -0pi -e 's/if \\\\\\(dragState\\\\\\) onDragEnd\\\\\\(\\\\\\)/if \\(dragState\\) onDragEnd?.\\(\\)/g; s/if \\\\\\(transformState\\\\\\) onTransformEnd\\\\\\(\\\\\\)/if \\(transformState\\) onTransformEnd?.\\(\\)/g' app/composables/useStickerInteraction.ts)",
       "Bash(awk 'NR>=655 {printf \"%d: %s\\\\n\", NR, $0}' app/assets/scss/pages/_editor.scss)",
-      "Bash(grep -oE \"[0-9]{3,}\\\\.[0-9]+\" public/font/font-01.svg)"
+      "Bash(grep -oE \"[0-9]{3,}\\\\.[0-9]+\" public/font/font-01.svg)",
+      "Bash(node -e \"console.log\\('node', process.version\\)\")",
+      "Bash(node scripts/clear-wall.mjs)",
+      "Bash(node scripts/inspect-wall.mjs)",
+      "Bash(echo \"=== reset-text + interstitial scss ===\"; grep -n \"reset-text\\\\|interstitial\\\\|spotlight\" app/assets/scss/pages/_canvas.scss | head; echo \"=== scripts dir ===\"; ls -la scripts/ 2>/dev/null; echo \"=== video element scss ===\"; sed -n '/__interstitial/,/^}/p' app/assets/scss/pages/_canvas.scss | head -40)",
+      "Bash(ffmpeg -y -ss 0.5 -i /Users/kevin/Documents/Github/southNpm/public/resetAnimation.mp4 -vframes 1 -vf \"scale=20:20\" frame.png)",
+      "Bash(ffmpeg -i frame.png -vf \"crop=2:2:0:0,scale=1:1\" -f rawvideo -pix_fmt rgb24 -)",
+      "Bash(xxd -p)",
+      "Bash(grep -rniE \"idle|inactiv|閒置|沒.{0,4}\\(操作|送出|動作\\)|自動|auto|reset|timeout|setTimeout|_MS|無動作|清空|clear\" app/pages/editor.vue)",
+      "WebFetch(domain:jameshfisher.com)",
+      "Bash(mdls -name kMDItemDurationSeconds -name kMDItemPixelWidth -name kMDItemPixelHeight /Users/kevin/Documents/Github/southNpm/public/resetAnimation.mp4)"
     ],
     "additionalDirectories": [
-      "/Users/kevin/Documents/Github/southNpm/app/composables"
+      "/Users/kevin/Documents/Github/southNpm/app/composables",
+      "/Users/kevin/Documents/Github/southNpm/app/assets/scss/pages"
     ]
   }
 }

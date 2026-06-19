@@ -26,7 +26,7 @@ import {
  * 預約的有效期 expiresAt 一律設為 lastActivityAt + 此值，所以即使分頁一直開著，
  * 只要使用者停止操作超過這段時間，該字就會釋放回可選池（解決「開著不關永遠佔字」）。
  */
-const RESERVATION_TTL_MS = 5 * 60_000
+const RESERVATION_TTL_MS = 1 * 60_000
 /** 續約間隔：須明顯小於 TTL，確保正在書寫的人不會被誤回收（毫秒） */
 const HEARTBEAT_MS = 2 * 60_000
 

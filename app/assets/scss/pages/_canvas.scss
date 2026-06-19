@@ -142,6 +142,23 @@
     inset: 8%;
 }
 
+/* 測試 reset：格內字離場動畫（目前保留備用，reset 改由綠幕去背影片轉場） */
+.p-wall__cell-note.is-leaving {
+    animation: cell-leave 0.9s cubic-bezier(0.4, 0, 0.2, 1) forwards;
+}
+
+@keyframes cell-leave {
+    from {
+        opacity: 1;
+        transform: translateY(0) scale(1);
+    }
+
+    to {
+        opacity: 0;
+        transform: translateY(-14%) scale(0.6);
+    }
+}
+
 .p-wall__cell-note .c-sticky-note {
     width: 100%;
     height: 100%;
@@ -172,6 +189,170 @@
         opacity: 1;
         transform: none;
     }
+}
+
+/* 測試 reset：右側「謝謝參與」文字（與聚光區同一側、垂直置中） */
+/* ─── reset 對話 stage：猴子走入 + 對話框逐字 ─── */
+.p-wall__reset-stage {
+    position: absolute;
+    inset: 0;
+    z-index: 40;
+    pointer-events: none;
+}
+
+/* 猴子 + 對話框群組（比例對齊 ref：猴子在左下、對話框在右上、尾巴指向猴子）
+   整組放在畫面右側，初始在右外，is-in 時整組一起走入定位 */
+.p-wall__reset-group {
+    position: absolute;
+    right: 0.5%;
+    bottom: 2%;
+    width: clamp(340px, 40vw, 720px);
+    aspect-ratio: 684 / 968;
+    transform: translateX(140%);
+    opacity: 0;
+    transition:
+        transform 1.4s cubic-bezier(0.22, 0.61, 0.36, 1),
+        opacity 0.5s ease;
+    will-change: transform, opacity;
+
+    &.is-in {
+        transform: translateX(0);
+        opacity: 1;
+        /* 上下漂浮放慢 */
+        animation: p-wall-monkey-bob 4.2s ease-in-out 1.4s infinite;
+    }
+}
+
+/* 走定位後整組（猴子 + 對話框）輕微上下浮動 */
+@keyframes p-wall-monkey-bob {
+    0%,
+    100% {
+        transform: translateX(0) translateY(0);
+    }
+    50% {
+        transform: translateX(0) translateY(-2.5%);
+    }
+}
+
+/* 猴子：群組左下，完整露出不裁切 */
+.p-wall__reset-monkey {
+    position: absolute;
+    left: 0;
+    bottom: 5%;
+    width: 67%;
+    height: auto;
+    transform-origin: 50% 100%;
+}
+
+/* 進場走路感：持續左右傾擺，「定住一格再快速翻面」（成對百分比 = 逐格踏步感），
+   只有走到定位的最後一刻（100%）才回正。
+   時長 = 走入時間 MONKEY_WALK_MS（1.4s），跑 1 次，到位即停。 */
+.p-wall__reset-group.is-in .p-wall__reset-monkey {
+    animation: p-wall-monkey-walk 1.4s linear 0s 1;
+}
+
+@keyframes p-wall-monkey-walk {
+    /* 每段定住 ~0.35s，段與段之間 1% 快速翻面 */
+    0%,
+    24% {
+        transform: rotate(-3.5deg) translateY(0); /* 向左傾 */
+    }
+    25%,
+    49% {
+        transform: rotate(3.5deg) translateY(-1.5%); /* 向右傾 */
+    }
+    50%,
+    74% {
+        transform: rotate(-3.5deg) translateY(0); /* 向左傾 */
+    }
+    75%,
+    99% {
+        transform: rotate(3.5deg) translateY(-1.5%); /* 向右傾 */
+    }
+    100% {
+        transform: rotate(0deg) translateY(0); /* 到定位才回正 */
+    }
+}
+
+/* 對話框：群組右上，尾巴朝左下指向猴子頭部（再往左下挪一些） */
+.p-wall__reset-chat {
+    position: absolute;
+    right: 20%;
+    top: 11%;
+    width: 39%;
+    aspect-ratio: 565 / 947;
+}
+
+.p-wall__reset-chat-bg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+}
+
+.p-wall__reset-chat-text {
+    position: absolute;
+    inset: 14% 16% 18% 16%;
+    display: flex;
+    flex-direction: column;
+    /* 直書：cross 軸為垂直方向，flex-start = 文字對齊頂部 */
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0.5em;
+    color: #2c2113;
+    /* 直書，貼合對話框的中式風格 */
+    writing-mode: vertical-rl;
+}
+
+/* 主／副文字同樣大小（再縮小一點） */
+.p-wall__reset-chat-main,
+.p-wall__reset-chat-sub {
+    margin: 0;
+    font-size: clamp(15px, 1.8vw, 28px);
+    font-weight: 800;
+    letter-spacing: 0.1em;
+    min-height: 1em;
+}
+
+.p-wall__reset-chat-sub {
+    opacity: 0.82;
+}
+
+/* 對話框淡入 */
+.p-wall-reset-chat-enter-active {
+    transition: opacity 0.45s ease, transform 0.45s ease;
+}
+.p-wall-reset-chat-leave-active {
+    transition: opacity 0.3s ease;
+}
+.p-wall-reset-chat-enter-from {
+    opacity: 0;
+    transform: translateY(8%) scale(0.9);
+}
+.p-wall-reset-chat-leave-to {
+    opacity: 0;
+}
+
+/* ─── reset 綠幕去背：WebGL 輸出 canvas 全螢幕，原始 video 隱藏 ─── */
+.p-wall__reset-chroma {
+    position: fixed;
+    inset: 0;
+    z-index: 90;
+    width: 100%;
+    height: 100%;
+    object-fit: contain;
+    pointer-events: none;
+}
+
+.p-wall__reset-chroma-src {
+    position: fixed;
+    width: 1px;
+    height: 1px;
+    opacity: 0;
+    pointer-events: none;
+    left: -9999px;
+    top: -9999px;
 }
 
 .p-wall__interstitial {

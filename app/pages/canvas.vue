@@ -31,6 +31,7 @@
             v-if="gridNotes[i - 1]"
             :key="getId(gridNotes[i - 1])"
             class="p-wall__cell-note"
+            :class="{ 'is-leaving': resetting }"
           >
             <StickyNote :note="noteAt(i - 1)" />
           </div>
@@ -48,7 +49,45 @@
           <StickyNote :note="spotlightNote" />
         </div>
       </div>
+
+      <!-- 測試模式 reset：猴子走入畫面 → 對話框逐字顯示（猴子與對話框同一容器一起移動） -->
+      <div v-if="showResetOverlay" class="p-wall__reset-stage">
+        <div class="p-wall__reset-group" :class="{ 'is-in': monkeyIn }">
+          <img
+            src="/monkey.webp"
+            alt=""
+            aria-hidden="true"
+            class="p-wall__reset-monkey"
+          />
+          <Transition name="p-wall-reset-chat">
+            <div v-if="chatIn" class="p-wall__reset-chat">
+              <img src="/chat.webp" alt="" aria-hidden="true" class="p-wall__reset-chat-bg" />
+              <div class="p-wall__reset-chat-text">
+                <p class="p-wall__reset-chat-main">{{ typedMain }}</p>
+                <p class="p-wall__reset-chat-sub">{{ typedSub }}</p>
+              </div>
+            </div>
+          </Transition>
+        </div>
+      </div>
     </div>
+
+    <!-- reset 綠幕去背動畫：WebGL chroma key，順向→清空→反向 -->
+    <canvas
+      v-show="showResetVideo"
+      ref="chromaCanvasRef"
+      class="p-wall__reset-chroma"
+      aria-hidden="true"
+    />
+    <video
+      ref="chromaVideoRef"
+      class="p-wall__reset-chroma-src"
+      src="/resetAnimation.mp4"
+      preload="auto"
+      muted
+      playsinline
+      aria-hidden="true"
+    />
 
     <!-- 插播影片：全螢幕覆蓋 -->
     <div
@@ -73,6 +112,7 @@ import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
 import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore'
 import StickyNote from '~/components/StickyNote.vue'
 import { useFirestore } from '~/composables/useFirestore'
+import { useChromaVideo } from '~/composables/useChromaVideo'
 import {
   getInterstitialSlotKey,
   clampInterstitialIntervalMinutes,
@@ -90,6 +130,13 @@ const GRID_ROWS = 12
 const TOTAL_CELLS = GRID_COLS * GRID_ROWS // 144
 /** 新字在右下角放大停留的時間，到時才縮回自己的格子 */
 const SPOTLIGHT_HOLD_MS = 10000
+
+/* ─── 測試模式 ─── */
+/** 測試版：只要前 TEST_CAPACITY 格（對應 font-01~03）都填滿，就進入 reset 流程 */
+const TEST_MODE = true
+const TEST_CAPACITY = 3
+/** 對話框文字打完後的停留時間 */
+const RESET_TEXT_HOLD_MS = 4000
 
 /* ─── Firestore ─── */
 const { $firestore } = useNuxtApp()
@@ -152,12 +199,151 @@ const gridNotes = reactive<(Note | null)[]>(new Array(TOTAL_CELLS).fill(null))
 const knownIds = new Set<string>()
 let initialized = false
 
+/**
+ * 測試模式：已經 reset（離場清掉）過的字 token。
+ * reset 只清畫面、不刪資料庫，所以 queue_history 仍保留那些字；若不記錄，
+ * 每次重整初次載入又會把它們填回前 N 格而再次觸發 reset。
+ * 用 localStorage 持久化（大螢幕固定一台機器），載入時把這些 token 標為已知但不上牆。
+ */
+const CLEARED_TOKENS_KEY = 'npm_wall_cleared_tokens'
+const loadClearedTokens = (): string[] => {
+  if (typeof window === 'undefined') return []
+  try {
+    const arr = JSON.parse(localStorage.getItem(CLEARED_TOKENS_KEY) || '[]')
+    return Array.isArray(arr) ? arr : []
+  } catch { return [] }
+}
+const clearedTokens = new Set<string>(loadClearedTokens())
+const persistClearedTokens = () => {
+  if (typeof window === 'undefined') return
+  try { localStorage.setItem(CLEARED_TOKENS_KEY, JSON.stringify([...clearedTokens])) } catch { /* ignore */ }
+}
+
 /* ─── 聚光佇列 ─── */
 const spotlightNote = ref<Note | null>(null)
 const spotQueue: Note[] = []
 let spotlightBusy = false
 let spotlightTimer: ReturnType<typeof setTimeout> | null = null
 let currentTween: { kill: () => void } | null = null
+
+/* ─── 測試 reset 流程狀態 ─── */
+/** reset 對話 stage（猴子 + 對話框）是否掛載 */
+const showResetOverlay = ref(false)
+/** 猴子是否已走入定位 */
+const monkeyIn = ref(false)
+/** 對話框是否淡入 */
+const chatIn = ref(false)
+/** 對話框主文字（逐字打出） */
+const typedMain = ref('')
+/** 對話框副文字（逐字打出） */
+const typedSub = ref('')
+/** 綠幕去背 canvas 是否顯示 */
+const showResetVideo = ref(false)
+/** 是否正在離場（觸發格內字的 CSS 離場動畫） */
+const resetting = ref(false)
+/** reset 流程是否進行中（避免重複觸發） */
+let resetInProgress = false
+let resetTimers: ReturnType<typeof setTimeout>[] = []
+
+/* reset 對話文字內容（沿用原本的右側提示文字） */
+const RESET_MAIN_TEXT = '謝謝參與'
+const RESET_SUB_TEXT = '畫面即將重新開始'
+/** 猴子走入畫面的動畫時間（需與 _canvas.scss 一致） */
+const MONKEY_WALK_MS = 1400
+/** 對話框淡入時間 */
+const CHAT_IN_MS = 450
+/** 逐字打字每字間隔 */
+const TYPE_CHAR_MS = 150
+
+/* 綠幕去背影片 refs + controller */
+const chromaCanvasRef = ref<HTMLCanvasElement | null>(null)
+const chromaVideoRef = ref<HTMLVideoElement | null>(null)
+const chroma = useChromaVideo({
+  keyColor: [0, 1, 0], // 去背鍵色 #00FF00
+  similarity: 0.42,
+  smoothness: 0.09,
+  spill: 0.22 // 加大去色範圍，壓掉半透明邊緣殘留的綠
+})
+let chromaReady = false
+
+/** 計算前 TEST_CAPACITY 格已填入的數量 */
+function filledTestCount(): number {
+  let c = 0
+  for (let i = 0; i < TEST_CAPACITY; i++) if (gridNotes[i]) c++
+  return c
+}
+
+/** 前 N 格填滿就觸發 reset 流程（測試模式專用） */
+function maybeTriggerReset() {
+  if (!TEST_MODE || resetInProgress) return
+  if (filledTestCount() >= TEST_CAPACITY) void runResetSequence()
+}
+
+const wait = (ms: number) =>
+  new Promise<void>(resolve => {
+    resetTimers.push(setTimeout(resolve, ms))
+  })
+
+/** 逐字打字：把 full 一個字一個字寫進 target，每字間隔 TYPE_CHAR_MS */
+async function typeOut(target: typeof typedMain, full: string) {
+  target.value = ''
+  for (const ch of full) {
+    target.value += ch
+    await wait(TYPE_CHAR_MS)
+  }
+}
+
+/**
+ * Reset 流程：
+ *   1. 猴子走入畫面（CSS slide-in）。
+ *   2. 對話框淡入，主／副文字逐字打出，停留 RESET_TEXT_HOLD_MS。
+ *   3. 綠幕去背影片順向播放；播完同時清空格陣並移除猴子/對話框/文字。
+ *   4. 綠幕去背影片反向播放，露出清空後的畫面，結束。
+ * 注意：knownIds 不清除，避免 history listener 把同一批字當新字重新補回畫面。
+ */
+async function runResetSequence() {
+  resetInProgress = true
+
+  // 1. 猴子走入畫面
+  showResetOverlay.value = true
+  await nextTick()
+  await wait(50)
+  monkeyIn.value = true
+  await wait(MONKEY_WALK_MS)
+
+  // 2. 對話框淡入 + 文字逐字出現
+  chatIn.value = true
+  await wait(CHAT_IN_MS)
+  await typeOut(typedMain, RESET_MAIN_TEXT)
+  await typeOut(typedSub, RESET_SUB_TEXT)
+  await wait(RESET_TEXT_HOLD_MS)
+
+  // 3. 綠幕去背影片順向播放
+  showResetVideo.value = true
+  await nextTick()
+  if (chromaReady) await chroma.playForward()
+
+  // 順向播完的同時：清空格陣（只清畫面，保留 knownIds）並移除對話 stage
+  for (const n of gridNotes) if (n) clearedTokens.add(getId(n))
+  if (spotlightNote.value) clearedTokens.add(getId(spotlightNote.value))
+  persistClearedTokens()
+  for (let i = 0; i < gridNotes.length; i++) gridNotes[i] = null
+  spotlightNote.value = null
+  showResetOverlay.value = false
+  monkeyIn.value = false
+  chatIn.value = false
+  typedMain.value = ''
+  typedSub.value = ''
+  resetting.value = false
+  broadcastState()
+  await nextTick()
+
+  // 4. 綠幕去背影片反向播放，露出已清空的畫面
+  if (chromaReady) await chroma.playReverse()
+  showResetVideo.value = false
+
+  resetInProgress = false
+}
 
 /* ══════════════════════════════════════════════
    展示資料：歷史驅動格陣，pending 即時轉入歷史
@@ -176,11 +362,15 @@ function applyHistory(items: Note[]) {
       // 先標記為已知：同 font 的較舊重複字會被 continue 跳過，若不在此記錄就會被
       // 下一次快照當成「新字」排進聚光佇列重播（font-116、font-11 先跑的成因）
       knownIds.add(getId(it))
+      // 已 reset 過的字：標為已知但不上牆，避免重整後又填滿前 N 格再次觸發 reset
+      // （以 TEST_MODE 為閘，避免日後切回正式 144 字版時誤用 localStorage 殘留的標記）
+      if (TEST_MODE && clearedTokens.has(getId(it))) continue
       if (gridNotes[idx]) continue
       gridNotes[idx] = it
     }
     initialized = true
     broadcastState()
+    maybeTriggerReset()
     return
   }
 
@@ -191,6 +381,8 @@ function applyHistory(items: Note[]) {
   let queued = false
   for (const it of fresh) {
     knownIds.add(getId(it))
+    // 已 reset 過的字：標為已知後直接略過，不重播也不上牆
+    if (TEST_MODE && clearedTokens.has(getId(it))) continue
     const ms = playedAtMs(it)
     // ms == null：剛寫入、serverTimestamp 尚未解析 → 真的剛上傳，播聚光
     // 近 SPOTLIGHT_RECENT_MS 內：真的新上傳，播聚光
@@ -247,6 +439,8 @@ async function processSpotlightQueue() {
 
   const note = spotQueue.shift()!
   spotlightNote.value = note
+  // 從排隊移到聚光：重新廣播，確保 live_grid 仍含此字（避免落格前的空窗讓 editor 重複發字）
+  broadcastState()
   await nextTick()
 
   // 右下角放大停留 SPOTLIGHT_HOLD_MS
@@ -268,6 +462,7 @@ async function flyToCell(note: Note) {
     gridNotes[idx] = note
     spotlightNote.value = null
     broadcastState()
+    maybeTriggerReset()
   }
 
   const spotEl = spotlightRef.value
@@ -305,9 +500,14 @@ async function flyToCell(note: Note) {
   commit()
 }
 
-/** 廣播目前畫面上的便利貼（精簡：僅 id/token/font），供編輯器避免同字重複 */
+/**
+ * 廣播目前「佔用中」的便利貼（精簡：僅 id/token/font），供編輯器避免同字重複。
+ * 必須包含「飛行中」的字：聚光中(spotlightNote) 與 排隊等聚光(spotQueue)。
+ * 這些字已送出、已從 queue_pending 移進 queue_history，但還沒飛到左邊格子；
+ * 若不一起廣播，editor 讀 live_grid 時會漏掉它們（整段聚光約 10 秒）而把同一個字重複發出。
+ */
 function broadcastState() {
-  const live = [...gridNotes, spotlightNote.value].filter(Boolean) as Note[]
+  const live = [...gridNotes, spotlightNote.value, ...spotQueue].filter(Boolean) as Note[]
   const live_grid = live.map(n => ({
     id: getId(n),
     token: n.token ?? getId(n),
@@ -468,6 +668,16 @@ onMounted(async () => {
   // 背景預載 GSAP，讓第一個聚光飛入時不需等待動態載入
   if (typeof window !== 'undefined') import('gsap').catch(() => {})
 
+  // 初始化 reset 綠幕去背（WebGL chroma key）；失敗則整段流程跳過影片
+  if (chromaCanvasRef.value && chromaVideoRef.value) {
+    try {
+      chromaReady = await chroma.init(chromaCanvasRef.value, chromaVideoRef.value)
+    } catch (e) {
+      console.warn('[wall] chroma video 初始化失敗', e)
+      chromaReady = false
+    }
+  }
+
   try {
     const initialSnap = await getDoc(doc(db, 'system', 'canvas_video'))
     applyCanvasVideoConfig(initialSnap.exists() ? (initialSnap.data() as any) : undefined)
@@ -491,7 +701,9 @@ onUnmounted(() => {
   unsubCanvasVideo?.(); unsubCanvasVideo = null
   if (interstitialArmTimer) { clearInterval(interstitialArmTimer); interstitialArmTimer = null }
   if (spotlightTimer) { clearTimeout(spotlightTimer); spotlightTimer = null }
+  resetTimers.forEach(clearTimeout); resetTimers = []
   currentTween?.kill()
+  chroma.destroy()
   document.body.style.margin = ''
   document.body.style.overflow = ''
 })

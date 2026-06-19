@@ -49,7 +49,7 @@
 
             <div v-else class="p-editor__font-picker-grid">
               <button
-                v-for="font in FONT_LIST"
+                v-for="font in ACTIVE_FONT_LIST"
                 :key="font"
                 type="button"
                 class="p-editor__font-picker-item"
@@ -395,7 +395,7 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import type { StickerInstance, StickyNoteStyle } from '~/types'
 import { getStickerById, STICKER_LIBRARY } from '~/data/stickers'
 import { EDITOR_TABS, CALLIGRAPHY_BRUSH_COLOR, BRUSH_SIZES, DEFAULT_BRUSH_SIZE } from '~/data/editor-config'
-import { FONT_LIST, getFontUrl } from '~/data/fonts'
+import { ACTIVE_FONT_LIST, getFontUrl } from '~/data/fonts'
 import { getStickerStyle } from '~/utils/sticky-note-style'
 import { useStickerInteraction } from '~/composables/useStickerInteraction'
 import { useCanvasPinch } from '~/composables/useCanvasPinch'
@@ -424,8 +424,16 @@ const route = useRoute()
 const router = useRouter()
 const { $firestore } = useNuxtApp()
 const db = $firestore as any
-// 字帖預約：選好字就佔用，讓其他編輯器選不到；送出/離開/TTL 到期才釋放
+// 字帖預約：選好字就佔用，讓其他編輯器選不到；離開未送出即釋放，已送出則交給 TTL 回收
 const fontReservation = useFontReservation()
+/**
+ * 是否已成功送出、把字交棒給牆面。
+ * 送出後 note 會經 queue_pending →（canvas moveToHistory 刪除 pending、寫入 history）→ 聚光 → 落格，
+ * 這段過渡期有個空窗：note 已從 queue_pending 刪掉、但牆面 live_grid 廣播尚未含它。
+ * 此時若釋放預約，別的編輯器會兩邊都讀不到此字而重複發出。故送出後「不主動釋放」預約，
+ * 改由 TTL 自動回收（約 1 分鐘，遠長於落格所需），確保整段過渡期此字仍被佔住、不被重複選到。
+ */
+let reservationHandedToWall = false
 const { saveToken, loadToken, clearToken } = useStorage()
 
 // Loading state
@@ -434,16 +442,33 @@ const showIntroOverlay = ref(true)
 const termsAccepted = ref(false)
 const showTermsModal = ref(false)
 
-const onStartClick = () => {
+const onStartClick = async () => {
   if (loading.value) return
   if (!termsAccepted.value) {
     showTermsModal.value = true
     return
   }
-  showIntroOverlay.value = false
 
-  // 按「開始」後先讓使用者挑選一個沒在牆上的字，確認後才進入編輯器
-  openFontPicker()
+  // 暫時隱藏手動選字 UI：按「開始」後直接從「還沒上牆的可選字」自動挑一個並佔用，
+  // 成功才進入編輯器。（保留 openFontPicker / 字帖選擇 overlay 程式碼，方便日後再開啟手動選字）
+  loading.value = true
+  const claimed = await autoSelectFont()
+  loading.value = false
+  if (!claimed) {
+    // 牆面當下全滿：失效已用字快取，讓使用者稍後（牆清空後）在同一頁再按開始時重讀最新牆況，
+    // 否則會一直沿用這次讀到的「全滿」結果而永遠跳出此提醒。
+    invalidateUsedFontsCache()
+    showAlert(
+      '牆面正在更新，請稍候…',
+      '暫無可用的字',
+      '✍️'
+    )
+    return
+  }
+  selectedFontId.value = claimed
+  fontReservation.startHeartbeat()
+  showIntroOverlay.value = false
+  enterEditor()
 }
 
 // Editor State
@@ -460,13 +485,18 @@ const WALL_CAPACITY = 144
 
 /**
  * 讀取目前「已上傳」所使用的字帖 id 集合，用於避免描紅字帖與牆上重複。
- * 取「三方聯集」當權威來源：
- *   1. queue_history 最新 144 筆 + queue_pending 待播（不靠大螢幕也能避字）
- *   2. system/current_state.live_grid（大螢幕「此刻實際顯示」的字，含聚光中那張）
- * 取聯集（越多越保守、只會多避不會撞）：history/pending 重建出的格陣有時會與牆上實際
- * 顯示有出入（去重、視窗位移、聚光佇列尚未落格…），把 live_grid 併進來即可確保
- * 「canvas 上有的字」一定被排除。current_state 牆沒開時可能過時，但過時只會多排除、
- * 不會造成撞字，安全。
+ *
+ * 效能關鍵：`queue_history` 的 note 內含手繪 base64（單筆可數十 KB、最新 144 筆整包可達數 MB），
+ * 但我們只需要每筆的 `style.font` 字串。Firestore Web SDK 無法只取單一欄位，整包讀下來會讓
+ * 進編輯器/送出前卡好幾秒。所幸 `system/current_state.live_grid` 已由大螢幕端「精簡廣播」，
+ * 每格只含 `{ id, token, status, style:{ font } }`（見 canvas.vue broadcastState），沒有手繪，
+ * 且是「此刻牆上實際顯示」的權威來源。
+ *
+ * 因此分兩段：
+ *   1. 先讀「輕量來源」：current_state.live_grid（牆上）＋ queue_pending（待播、平時量很小）。
+ *   2. 只有當 live_grid 不可用（牆從未廣播／讀取失敗）時，才退回讀「重量級」queue_history。
+ * 正常營運（大螢幕有在跑）時完全不會去讀 queue_history，省下數 MB 下載。
+ * 過時只會多排除、不會造成撞字，安全。
  */
 const getUsedFonts = async (): Promise<Set<string>> => {
   const used = new Set<string>()
@@ -485,37 +515,43 @@ const getUsedFonts = async (): Promise<Set<string>> => {
       new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
     ])
 
-  const historyQ = query(
-    collection(db, 'queue_history'),
-    orderBy('playedAt', 'desc'),
-    limit(WALL_CAPACITY)
-  )
   const pendingQ = query(collection(db, 'queue_pending'), limit(WALL_CAPACITY))
 
-  // 三個來源獨立讀取（allSettled）：任一失敗都不影響其他來源貢獻，
-  // 不會像 Promise.all 那樣一個出錯就整包變空集合→退回純隨機而撞字。
-  //   1. system/current_state.live_grid：大螢幕「此刻實際在牆上」的字（最權威，含聚光中那張）。
-  //      canvas 格陣是累積式、只增不減，舊字會掉出 queue_history 的最新 144 筆視窗卻仍黏在牆上，
-  //      只有這份廣播能完整反映，所以它是避免撞字的關鍵來源。
-  //   2+3. queue_history 最新 144 + queue_pending：牆沒開／廣播過時時的後備來源。
-  const results = await Promise.allSettled([
+  // 第一段：輕量來源（current_state 廣播 + 待播佇列）。allSettled：任一失敗不影響其他來源。
+  const [stateRes, pendingRes] = await Promise.allSettled([
     withTimeout(getDoc(doc(db, 'system', 'current_state'))),
-    withTimeout(getDocs(historyQ)),
     withTimeout(getDocs(pendingQ))
   ])
 
-  const [stateRes, historyRes, pendingRes] = results
+  let liveGridAvailable = false
   if (stateRes.status === 'fulfilled') {
     const snap = stateRes.value
     const liveGrid = snap.exists() ? (snap.data() as any)?.live_grid : null
-    if (Array.isArray(liveGrid)) for (const g of liveGrid) addFont(g?.style?.font)
+    if (Array.isArray(liveGrid)) {
+      liveGridAvailable = true // 牆有廣播過（含空陣列＝牆上目前沒字）→ 視為權威，不需重讀 history
+      for (const g of liveGrid) addFont(g?.style?.font)
+    }
   } else {
-    console.debug('[Editor] 讀取 current_state 失敗，改用 history/pending 避字', stateRes.reason)
+    console.debug('[Editor] 讀取 current_state 失敗，改讀 queue_history 避字', stateRes.reason)
   }
-  if (historyRes.status === 'fulfilled') collectFonts(historyRes.value.docs)
   if (pendingRes.status === 'fulfilled') collectFonts(pendingRes.value.docs)
 
-  if (!used.size) console.debug('[Editor] 三方來源皆無已用字，描紅字帖改純隨機')
+  // 第二段（後備）：只有 live_grid 不可用時，才付出 queue_history 的重量級讀取。
+  if (!liveGridAvailable) {
+    const historyQ = query(
+      collection(db, 'queue_history'),
+      orderBy('playedAt', 'desc'),
+      limit(WALL_CAPACITY)
+    )
+    try {
+      const historySnap = await withTimeout(getDocs(historyQ))
+      collectFonts(historySnap.docs)
+    } catch (e) {
+      console.debug('[Editor] queue_history 後備讀取失敗', e)
+    }
+  }
+
+  if (!used.size) console.debug('[Editor] 各來源皆無已用字，描紅字帖改純隨機')
   return used
 }
 
@@ -539,6 +575,14 @@ const prefetchUsedFonts = (): Promise<Set<string>> => {
   if (!usedFontsPromise) usedFontsPromise = getUsedFonts()
   return usedFontsPromise
 }
+/**
+ * 使快取的「已用字」失效，讓下一次 prefetchUsedFonts 重新向 Firestore 讀取。
+ * 用於「按開始失敗（牆面當下全滿）」後：使用者可能停在同一頁、等牆清空再按一次開始，
+ * 若沿用上次按開始時讀到的快取會永遠判定無字可選，因此每次失敗都要重讀最新牆況。
+ */
+const invalidateUsedFontsCache = () => {
+  usedFontsPromise = null
+}
 
 /* ─── 字帖選擇（按開始後手動選一個沒在牆上的字）─── */
 const showFontPicker = ref(false)
@@ -549,7 +593,7 @@ const disabledFonts = ref<Set<string>>(new Set())
 /** 目前選取的字（預設為清單中第一個可選的字） */
 const pickerSelectedFont = ref<string | null>(null)
 /** 所有字都被用掉、目前無字可選（牆已滿） */
-const noFontAvailable = computed(() => !fontPickerLoading.value && disabledFonts.value.size >= FONT_LIST.length)
+const noFontAvailable = computed(() => !fontPickerLoading.value && disabledFonts.value.size >= ACTIVE_FONT_LIST.length)
 
 /** 重新計算不可選字集合，並把選取預設為第一個可選的字 */
 const refreshDisabledFonts = async (fresh = false) => {
@@ -560,8 +604,33 @@ const refreshDisabledFonts = async (fresh = false) => {
   disabledFonts.value = new Set<string>([...used, ...reserved])
   // 預設選最前面可被選擇的字
   if (!pickerSelectedFont.value || disabledFonts.value.has(pickerSelectedFont.value)) {
-    pickerSelectedFont.value = FONT_LIST.find(id => !disabledFonts.value.has(id)) ?? null
+    pickerSelectedFont.value = ACTIVE_FONT_LIST.find(id => !disabledFonts.value.has(id)) ?? null
   }
+}
+
+/**
+ * 自動選字（暫時取代手動選字 UI）：從「牆上已用＋別人預約」以外的可選字中隨機挑一個並原子佔用。
+ * 取得回傳已佔用的字 id；若全部疑似被佔用，再嘗試從全清單搶一次（預約可能已過期釋放），
+ * 仍搶不到代表牆已滿、回傳 null。
+ */
+const autoSelectFont = async (): Promise<string | null> => {
+  // 測試版只有 3 個字，必須嚴格避開「牆上已顯示」的字，否則描紅字帖會跟 canvas 重複。
+  // 因此這裡一定等真正的已用字讀完（prefetch 在 onMounted 已先發動，正常情況幾乎即時），
+  // 不再用「逾時就當作空集合」的捷徑——那會在牆上有字時誤判為可選而撞字。
+  const [used, reserved] = await Promise.all([
+    prefetchUsedFonts(),
+    fontReservation.getReservedFonts()
+  ])
+  const exclude = new Set<string>([...used, ...reserved])
+  const candidates = shuffle(ACTIVE_FONT_LIST.filter(id => !exclude.has(id)))
+  let claimed = await fontReservation.claimFont(candidates)
+  // 後備：只排除「牆上正在顯示」的字(used)，允許搶可能已過期釋放的預約；
+  // 但絕不去搶已經出現在 canvas 上的字，避免跟大螢幕重複。全在牆上 → 回傳 null。
+  if (!claimed) {
+    const retry = shuffle(ACTIVE_FONT_LIST.filter(id => !used.has(id)))
+    claimed = await fontReservation.claimFont(retry)
+  }
+  return claimed
 }
 
 /** 按「開始」後打開字帖選擇：載入不可選清單並預設選第一個可選的字 */
@@ -601,17 +670,24 @@ const confirmFontSelection = async () => {
  * 從可選池當場換一個並佔起來。字帖只決定牆上格位，換字對使用者內容無感。
  */
 const ensureFontBeforeSubmit = async () => {
-  const current = selectedFontId.value
-  if (current && (await fontReservation.claimFont([current]))) return // 還是自己的
-
+  // 先讀最新「牆上已用字」與預約，才能判斷目前的字能不能沿用。
   const [used, reserved] = await Promise.all([
     getUsedFonts(),
     fontReservation.getReservedFonts()
   ])
+  const current = selectedFontId.value
+  // 只有當目前的字「沒在牆上」且還搶得回來，才沿用；
+  // 若它已經出現在 canvas 上，就算還是自己的預約也要換掉，避免跟大螢幕重複。
+  if (current && !used.has(current) && (await fontReservation.claimFont([current]))) return
+
   const exclude = new Set<string>([...used, ...reserved])
-  const candidates = shuffle(FONT_LIST.filter(id => !exclude.has(id)))
+  const candidates = shuffle(ACTIVE_FONT_LIST.filter(id => !exclude.has(id)))
   let claimed = await fontReservation.claimFont(candidates)
-  if (!claimed) claimed = await fontReservation.claimFont(shuffle(FONT_LIST))
+  // 後備同樣只排除牆上的字，絕不搶 canvas 上已有的字
+  if (!claimed) {
+    const retry = shuffle(ACTIVE_FONT_LIST.filter(id => !used.has(id)))
+    claimed = await fontReservation.claimFont(retry)
+  }
   if (claimed) selectedFontId.value = claimed
 }
 
@@ -694,7 +770,7 @@ const GPS_DENIED_MESSAGE = '需要開啟定位權限才能上傳大螢幕。<br>
 const GPS_OUTSIDE_MESSAGE = '您目前不在合法上傳區域內，請移動到店內指定範圍後再試。'
 /** 設為 false 時略過上傳前 GPS／地理柵欄驗證 */
 const ENABLE_GPS_VALIDATION = false
-const TOKEN_DISABLED_SUBMIT_COOLDOWN_MS = 1 * 60 * 1000
+const TOKEN_DISABLED_SUBMIT_COOLDOWN_MS = 0.5 * 60 * 1000
 const TOKEN_DISABLED_LAST_SUBMIT_AT_KEY = 'willmusic_token_disabled_last_submit_at'
 const tokenRequiredForSubmit = ref(false)
 let unsubTokenRequirement: (() => void) | null = null
@@ -1227,9 +1303,12 @@ const confirmSubmit = async () => {
       tokenForSubmit
     )
 
-    // 送出成功：字已變成正式便利貼，預約功成身退，釋放讓資源歸還
+    // 送出成功：字已寫入 queue_pending，接著會經 moveToHistory→聚光→落格才出現在牆上。
+    // 這段過渡期 note 已從 queue_pending 移除、但牆面廣播尚未含它，若此刻釋放預約會造成
+    // 別的編輯器重複發到同一個字（見 reservationHandedToWall 說明）。故不主動釋放，
+    // 只停掉續約，讓預約靠 TTL 自然過期回收，撐過整段過渡期。
+    reservationHandedToWall = true
     fontReservation.stopHeartbeat()
-    void fontReservation.releaseFont()
 
     // 上傳成功：清除快取的 Token
     if (!tokenRequiredForSubmit.value) {
@@ -1435,7 +1514,11 @@ const enterEditor = async () => {
 }
 
 // 分頁關閉 / 切走時盡力即時釋放佔用的字帖（抓不到就靠 reservation 的 TTL 回收）
-const releaseReservationBeacon = () => { fontReservation.releaseFontBeacon() }
+// 已送出者不釋放：保留預約撐過落格前的空窗，交給 TTL 回收，避免別的編輯器重複發字。
+const releaseReservationBeacon = () => {
+  if (reservationHandedToWall) return
+  fontReservation.releaseFontBeacon()
+}
 
 onMounted(async () => {
   // 在背景預載 Fabric.js（不 await，讓它在使用者閱讀規範的期間下載完畢）
@@ -1539,9 +1622,10 @@ onUnmounted(() => {
   unsubTokenRequirement?.()
   unsubTokenRequirement = null
   fabricBrush.dispose()
-  // 離開編輯器：釋放佔用的字帖（沒送出就還回去給別人選）
+  // 離開編輯器：未送出就把字還回去給別人選；已送出則保留預約交給 TTL 回收，
+  // 避免落格前的空窗（note 已離開 queue_pending、牆面廣播尚未含它）讓別的編輯器重複發到同一個字。
   fontReservation.stopHeartbeat()
-  void fontReservation.releaseFont()
+  if (!reservationHandedToWall) void fontReservation.releaseFont()
   if (import.meta.client) {
     window.removeEventListener('beforeunload', releaseReservationBeacon)
     window.removeEventListener('pagehide', releaseReservationBeacon)

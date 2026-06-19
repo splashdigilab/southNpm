@@ -152,4 +152,12 @@ export const FONT_LIST = [
 
 export type FontId = typeof FONT_LIST[number]
 
+/**
+ * 測試模式：只開放前 N 個字（font-01 ~ font-03）。
+ * 編輯器只會從 ACTIVE_FONT_LIST 選字／佔字，方便驗證「前三格填滿 → 顯示文字 → reset」的流程。
+ * 要恢復正式 144 字版本時，把 TEST_FONT_COUNT 改回 FONT_LIST.length 即可。
+ */
+export const TEST_FONT_COUNT = 3
+export const ACTIVE_FONT_LIST = FONT_LIST.slice(0, TEST_FONT_COUNT)
+
 export const getFontUrl = (id: string): string => `/font/${id}.svg`
