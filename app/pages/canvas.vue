@@ -262,7 +262,7 @@ const chroma = useChromaVideo({
   keyColor: [0, 1, 0], // 去背鍵色 #00FF00
   similarity: 0.42,
   smoothness: 0.09,
-  spill: 0.22 // 加大去色範圍，壓掉半透明邊緣殘留的綠
+  spill: 0.15 // 加大去色範圍，壓掉半透明邊緣殘留的綠
 })
 let chromaReady = false
 

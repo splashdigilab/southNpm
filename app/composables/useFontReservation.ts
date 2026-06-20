@@ -28,7 +28,7 @@ import {
  */
 const RESERVATION_TTL_MS = 1 * 60_000
 /** 續約間隔：須明顯小於 TTL，確保正在書寫的人不會被誤回收（毫秒） */
-const HEARTBEAT_MS = 2 * 60_000
+const HEARTBEAT_MS = 0.5 * 60_000
 
 const RESERVATION_COL = 'font_reservations'
 
