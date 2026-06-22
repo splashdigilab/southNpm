@@ -1306,9 +1306,13 @@ const confirmSubmit = async () => {
     // 送出成功：字已寫入 queue_pending，接著會經 moveToHistory→聚光→落格才出現在牆上。
     // 這段過渡期 note 已從 queue_pending 移除、但牆面廣播尚未含它，若此刻釋放預約會造成
     // 別的編輯器重複發到同一個字（見 reservationHandedToWall 說明）。故不主動釋放，
-    // 只停掉續約，讓預約靠 TTL 自然過期回收，撐過整段過渡期。
+    // 只停掉續約並把預約改成短寬限期（handOffToWall）：牆面 broadcastState 一旦把字納入
+    // live_grid（含聚光中／排隊中的字）就會持續覆蓋它，預約即多餘。沿用整整 1 分鐘 idle TTL 會
+    // 讓字早已安全上牆卻仍被鎖最久 1 分鐘——測試模式只有 3 個字時會卡住整池，造成牆上還有空位
+    // 卻顯示「暫無可用的字」。
     reservationHandedToWall = true
     fontReservation.stopHeartbeat()
+    void fontReservation.handOffToWall()
 
     // 上傳成功：清除快取的 Token
     if (!tokenRequiredForSubmit.value) {

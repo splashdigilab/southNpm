@@ -3,6 +3,7 @@ import {
   doc,
   getDocs,
   deleteDoc,
+  setDoc,
   runTransaction
 } from 'firebase/firestore'
 
@@ -29,6 +30,15 @@ import {
 const RESERVATION_TTL_MS = 1 * 60_000
 /** 續約間隔：須明顯小於 TTL，確保正在書寫的人不會被誤回收（毫秒） */
 const HEARTBEAT_MS = 0.5 * 60_000
+/**
+ * 送出後「交棒給牆面」的寬限期（毫秒）。
+ * 送出成功時不立即刪預約，要撐過「字已從 queue_pending 移除、但牆面 live_grid 廣播尚未含它」的空窗；
+ * 但這個空窗極短——牆面的 broadcastState 一旦把字納入 live_grid（含聚光中／排隊中的字）就會持續覆蓋它，
+ * 之後預約即多餘。故交棒後只保留這段短寬限期，而非沿用整整 1 分鐘的 idle TTL，
+ * 否則字早已安全上牆卻仍被預約鎖住，最久達 1 分鐘無法再被選到。
+ * 測試模式只有 3 個字時尤其明顯：剛送出的字會卡住整池，導致牆上還有空位卻顯示「暫無可用的字」。
+ */
+const HANDOFF_GRACE_MS = 15_000
 
 const RESERVATION_COL = 'font_reservations'
 
@@ -143,6 +153,27 @@ export const useFontReservation = () => {
   }
 
   /**
+   * 送出成功後把字交棒給牆面：不立即刪預約（要撐過 pending→history→廣播的短暫空窗），
+   * 但把到期時間改成 now + HANDOFF_GRACE_MS 的短寬限期即可，讓字一旦上牆（被 live_grid 覆蓋）
+   * 就能很快釋放回可選池，而非沿用整整 1 分鐘的 idle TTL 把字長時間鎖死。
+   * 呼叫前應先 stopHeartbeat()，避免續約把寬限期又拉長回 1 分鐘。
+   */
+  const handOffToWall = async (): Promise<void> => {
+    const font = currentFont
+    if (!font) return
+    currentFont = null // 交棒後不再持有：避免卸載時又被 releaseFont/renew 動到
+    try {
+      await setDoc(doc(db, RESERVATION_COL, font), {
+        owner,
+        font,
+        expiresAt: Date.now() + HANDOFF_GRACE_MS
+      })
+    } catch (e) {
+      console.debug('[reservation] 交棒縮短 TTL 失敗，沿用原 TTL 回收', font, e)
+    }
+  }
+
+  /**
    * 續約：把 expiresAt 設為 lastActivityAt + TTL（依「最後互動時間」而非當下時間）。
    * - 使用者持續操作 → lastActivityAt 一直更新 → 字一直保住。
    * - 使用者停止操作 → 閒置超過 TTL 就不再續約（且不覆蓋別人），讓字自然過期釋放，
@@ -188,6 +219,7 @@ export const useFontReservation = () => {
     claimFont,
     releaseFont,
     releaseFontBeacon,
+    handOffToWall,
     markActivity,
     startHeartbeat,
     stopHeartbeat
