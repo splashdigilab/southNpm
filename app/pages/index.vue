@@ -11,7 +11,7 @@
           <img src="/logo.svg" alt="故宮南院 Logo" class="p-index__intro-logo" />
           <!-- <h1 class="p-index__intro-title">活動介紹</h1> -->
           <div class="p-index__intro-desc p-index__intro-rules">
-            <p style="text-align: center">歡迎來到 故宮南院 藝字遊戲！<br>您將隨機抽到一個書法字帖，動動手指寫字後，再幫它加上趣味造型，創作出專屬字怪上傳大螢幕，快來跟大家一起共創經典文章吧！</p>
+            <p style="text-align: center">歡迎來到 故宮南院 藝字遊戲！<br>您將隨機抽到一個書法字帖，動動手指寫字後，再幫它加上趣味造型，創作出專屬字怪上傳大螢幕，快來跟大家一起共創千字文吧！</p>
           </div>
           <button
             type="button"

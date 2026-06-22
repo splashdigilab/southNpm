@@ -9,7 +9,7 @@
           <div class="p-index__intro-card">
             <img src="/logo.svg" alt="故宮南院 Logo" class="p-index__intro-logo" />
             <div class="p-index__intro-desc p-index__intro-rules">
-              <p style="text-align: center">歡迎來到 故宮南院 藝字遊戲！<br>您將隨機抽到一個書法字帖，動動手指寫字後，再幫它加上趣味造型，創作出專屬字怪上傳大螢幕，快來跟大家一起共創經典文章吧！</p>
+              <p style="text-align: center">歡迎來到 故宮南院 藝字遊戲！<br>您將隨機抽到一個書法字帖，動動手指寫字後，再幫它加上趣味造型，創作出專屬字怪上傳大螢幕，快來跟大家一起共創千字文吧！</p>
               <label class="p-index__intro-terms">
                 <input type="checkbox" v-model="termsAccepted" />
                 <span>我已閱讀並了解上述介紹</span>
