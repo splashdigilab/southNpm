@@ -124,7 +124,9 @@
       @cancel="showSubmitModal = false"
     >
       <template #preview>
-        <StickyNote v-if="previewNoteData" :note="previewNoteData" />
+        <div class="p-editor__submit-preview">
+          <StickyNote v-if="previewNoteData" :note="previewNoteData" />
+        </div>
       </template>
     </AppModal>
 
@@ -355,7 +357,7 @@
         </button>
         <button
           type="button"
-          class="p-editor__action-btn p-editor__action-btn--primary p-editor__action-btn--complete"
+          class="p-editor__action-btn p-editor__action-btn--secondary p-editor__action-btn--complete"
           @click="goToStickerStep"
         >
           下一步
@@ -1026,7 +1028,7 @@ const openSubmitModal = () => {
     const remainingCooldownMs = getTokenDisabledRemainingCooldownMs()
     if (remainingCooldownMs > 0) {
       showAlert(
-        `每次上傳後需等待 1 分鐘。請於 ${formatCooldownRemaining(remainingCooldownMs)} 後再試。`,
+        `每次上傳後需等待 30秒。請於 ${formatCooldownRemaining(remainingCooldownMs)} 後再試。`,
         '上傳冷卻中',
         '⏱️'
       )
@@ -1223,7 +1225,7 @@ const confirmSubmit = async () => {
     if (remainingCooldownMs > 0) {
       showSubmitModal.value = false
       showAlert(
-        `每次上傳後需等待 1 分鐘。請於 ${formatCooldownRemaining(remainingCooldownMs)} 後再試。`,
+        `每次上傳後需等待 30 秒。請於 ${formatCooldownRemaining(remainingCooldownMs)} 後再試。`,
         '上傳冷卻中',
         '⏱️'
       )

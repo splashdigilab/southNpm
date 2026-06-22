@@ -694,6 +694,13 @@ body.is-editor-page #app {
 
 }
 
+/* 送出確認預覽：便利貼底下墊九宮格稿紙底圖（與書寫畫布、大螢幕格子一致）。
+   modal 會 teleport 到 body，所以此 class 必須是頂層選擇器、不可巢狀於 .p-editor。 */
+.p-editor__submit-preview {
+  width: 100%;
+  background: url('/paper.webp') center / 100% 100% no-repeat;
+}
+
 /* ========== 字帖選擇 overlay（按開始後挑一個沒在牆上的字） ========== */
 .p-editor__font-picker {
   position: fixed;
