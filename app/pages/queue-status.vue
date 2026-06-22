@@ -6,7 +6,7 @@
       <!-- 卡片：送出成功訊息 -->
       <div class="p-queue-status__card">
         <h1 class="p-queue-status__title">送出成功</h1>
-        <p class="p-queue-status__hint">您的作品已送出，請稍後</p>
+        <p class="p-queue-status__hint">您的字怪已送出，請稍後於大螢幕與它相見！</p>
 
         <NuxtLink to="/editor" class="p-queue-status__btn">返回編輯器</NuxtLink>
       </div>

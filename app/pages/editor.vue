@@ -9,7 +9,7 @@
           <div class="p-index__intro-card">
             <img src="/logo.svg" alt="故宮南院 Logo" class="p-index__intro-logo" />
             <div class="p-index__intro-desc p-index__intro-rules">
-              <p style="text-align: center">歡迎來到 故宮南院 數位便利貼！<br>在這裡，您可以創作專屬於您的留言內容，<br>與大家一起分享參觀故宮南院的感動。</p>
+              <p style="text-align: center">歡迎來到 故宮南院 藝字遊戲！<br>您將隨機抽到一個書法字帖，動動手指寫字後，再幫它加上趣味造型，創作出專屬字怪上傳大螢幕，快來跟大家一起共創經典文章吧！</p>
               <label class="p-index__intro-terms">
                 <input type="checkbox" v-model="termsAccepted" />
                 <span>我已閱讀並了解上述介紹</span>
@@ -118,7 +118,7 @@
     <AppModal
       v-model="showSubmitModal"
       title="確認上傳"
-      message="請確認您的便利貼樣貌，上傳後將無法修改。"
+      message="請確認您的字怪樣貌，上傳後將無法修改。"
       :loading="isSubmitting"
       @confirm="confirmSubmit"
       @cancel="showSubmitModal = false"
@@ -463,9 +463,8 @@ const onStartClick = async () => {
     // 否則會一直沿用這次讀到的「全滿」結果而永遠跳出此提醒。
     invalidateUsedFontsCache()
     showAlert(
-      '牆面正在更新，請稍候…',
-      '暫無可用的字',
-      '✍️'
+      '藝字遊戲正在準備新稿紙，請稍候…',
+      '暫無可用的字帖',
     )
     return
   }

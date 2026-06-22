@@ -246,8 +246,8 @@ let resetInProgress = false
 let resetTimers: ReturnType<typeof setTimeout>[] = []
 
 /* reset 對話文字內容（沿用原本的右側提示文字） */
-const RESET_MAIN_TEXT = '謝謝參與'
-const RESET_SUB_TEXT = '畫面即將重新開始'
+const RESET_MAIN_TEXT = '謝謝大家的參與'
+const RESET_SUB_TEXT = '稿紙即將更新！'
 /** 猴子走入畫面的動畫時間（需與 _canvas.scss 一致） */
 const MONKEY_WALK_MS = 1400
 /** 對話框淡入時間 */
