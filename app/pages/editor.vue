@@ -87,6 +87,7 @@
       message="請先閱讀並同意活動規範"
       confirm-text="確定"
       cancel-text=""
+      confirm-button-class="c-button--danger"
       @confirm="showTermsModal = false"
     />
 
@@ -109,6 +110,7 @@
       :message="alertMessage"
       :confirmText="alertConfirmText"
       :cancelText="''"
+      confirm-button-class="c-button--danger"
       @confirm="handleAlertConfirm"
     />
 
@@ -584,6 +586,22 @@ const invalidateUsedFontsCache = () => {
   usedFontsPromise = null
 }
 
+/**
+ * 送出前要用到的「最新牆況＋預約」：在打開送出確認 modal 時就先發動讀取，
+ * 讓使用者看預覽、點「確認上傳」的這段時間把 Firestore 讀完，confirmSubmit 不必再等網路往返。
+ * 用「最新」而非沿用 prefetchUsedFonts 快取，避免送出時拿到過時牆況而撞字。
+ */
+let submitFontStatePromise: Promise<[Set<string>, Set<string>]> | null = null
+const prefetchSubmitFontState = (): Promise<[Set<string>, Set<string>]> => {
+  if (!submitFontStatePromise) {
+    submitFontStatePromise = Promise.all([
+      getUsedFonts(),
+      fontReservation.getReservedFonts()
+    ])
+  }
+  return submitFontStatePromise
+}
+
 /* ─── 字帖選擇（按開始後手動選一個沒在牆上的字）─── */
 const showFontPicker = ref(false)
 const fontPickerLoading = ref(false)
@@ -670,11 +688,8 @@ const confirmFontSelection = async () => {
  * 從可選池當場換一個並佔起來。字帖只決定牆上格位，換字對使用者內容無感。
  */
 const ensureFontBeforeSubmit = async () => {
-  // 先讀最新「牆上已用字」與預約，才能判斷目前的字能不能沿用。
-  const [used, reserved] = await Promise.all([
-    getUsedFonts(),
-    fontReservation.getReservedFonts()
-  ])
+  // 最新「牆上已用字」與預約：打開送出 modal 時已先發動讀取，這裡多半直接取現成結果，不必再等網路。
+  const [used, reserved] = await consumeSubmitFontState()
   const current = selectedFontId.value
   // 只有當目前的字「沒在牆上」且還搶得回來，才沿用；
   // 若它已經出現在 canvas 上，就算還是自己的預約也要換掉，避免跟大螢幕重複。
@@ -689,6 +704,13 @@ const ensureFontBeforeSubmit = async () => {
     claimed = await fontReservation.claimFont(retry)
   }
   if (claimed) selectedFontId.value = claimed
+}
+
+// confirmSubmit 用：取用「打開 modal 時就先發動」的牆況讀取結果（多半已就緒），用完即失效
+const consumeSubmitFontState = async (): Promise<[Set<string>, Set<string>]> => {
+  const result = await prefetchSubmitFontState()
+  submitFontStatePromise = null
+  return result
 }
 
 // 每個物件（貼紙）各自疊放順序：點選時 bringToFront，完成後該物件維持最頂層
@@ -1017,6 +1039,10 @@ const openSubmitModal = () => {
     showAlert(TOKEN_ALERT_MESSAGE, TOKEN_ALERT_TITLE, TOKEN_ALERT_ICON)
     return
   }
+
+  // 先發動「送出前的牆況讀取」：使用者看預覽、點確認的這段時間把 Firestore 讀完，送出時就不必再等。
+  submitFontStatePromise = null
+  void prefetchSubmitFontState()
 
   showSubmitModal.value = true
 }
