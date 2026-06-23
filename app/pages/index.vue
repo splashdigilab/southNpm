@@ -69,7 +69,7 @@
         </button>
       </div>
       <NuxtLink to="/editor" class="c-btn c-btn--fab p-index__fab">
-        專屬便利貼
+        專屬字怪
       </NuxtLink>
     </div>
   </div>

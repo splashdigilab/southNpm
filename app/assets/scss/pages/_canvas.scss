@@ -102,7 +102,8 @@
     background: #000;
 }
 
-/* 固定 445:250 比例的舞台：在不超出螢幕的前提下盡量放大並置中 */
+/* 固定比例的舞台：在不超出螢幕的前提下盡量放大並置中。
+   調整 445 / 220 這組數字即可改變扁度（分母越小越扁）；width 與 aspect-ratio 要同步。 */
 .p-wall__stage {
     position: absolute;
     inset: 0;
@@ -112,7 +113,23 @@
     max-width: 100vw;
     max-height: 100vh;
     overflow: hidden;
-    background: #fff url('/canvasBg.png') center / cover no-repeat;
+    background: #fff;
+    /* 作為 query 容器：讓字級用 cqw（舞台寬度的固定比例），不隨螢幕變動 */
+    container-type: inline-size;
+}
+
+/* 背景影片：鋪滿舞台、置於最底層；亮度（filter）由 JS 隨播放進度調整 */
+.p-wall__bg-video {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    /* 比例不符時保留頂部、從下方裁切（cover 預設置中，改為對齊上緣） */
+    object-position: center top;
+    z-index: 0;
+    pointer-events: none;
+    will-change: filter;
 }
 
 /* 左側 12×12 paper.webp 格陣：略小於滿版高度、垂直置中、貼齊左側；格子之間不留縫隙 */
@@ -167,9 +184,9 @@
 /* 聚光區：新字先在畫面右側中段放大，10 秒後由 JS（GSAP）縮放平移飛回格子 */
 .p-wall__spotlight {
     position: absolute;
-    right: 7%;
-    top: 18%;
-    height: 64%;
+    right: 1%;
+    top: 9%;
+    height: 82%;
     aspect-ratio: 1 / 1;
     z-index: 20;
     will-change: transform;
@@ -204,9 +221,10 @@
    整組放在畫面右側，初始在右外，is-in 時整組一起走入定位 */
 .p-wall__reset-group {
     position: absolute;
-    right: 0.5%;
+    right: -2.5%;
     bottom: 2%;
-    width: clamp(340px, 40vw, 720px);
+    /* 固定佔舞台寬度比例（舞台為 445:250 letterbox，用 % 才不會隨螢幕變動） */
+    width: 40%;
     aspect-ratio: 684 / 968;
     transform: translateX(140%);
     opacity: 0;
@@ -305,18 +323,14 @@
     writing-mode: vertical-rl;
 }
 
-/* 主／副文字同樣大小（再縮小一點） */
+/* 台詞文字：統一一種字級樣式，字級為舞台寬度的固定比例（cqw） */
 .p-wall__reset-chat-main,
 .p-wall__reset-chat-sub {
     margin: 0;
-    font-size: clamp(15px, 1.8vw, 28px);
+    font-size: 1.5cqw;
     font-weight: 800;
     letter-spacing: 0.1em;
     min-height: 1em;
-}
-
-.p-wall__reset-chat-sub {
-    opacity: 0.82;
 }
 
 /* 對話框淡入 */

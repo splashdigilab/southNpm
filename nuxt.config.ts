@@ -38,7 +38,7 @@ export default defineNuxtConfig({
 
   app: {
     head: {
-      title: '故宮南院 - Post Board',
+      title: '故宮南院 - 藝字遊戲',
       meta: [
         { charset: 'utf-8' },
         { name: 'viewport', content: 'width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no' },

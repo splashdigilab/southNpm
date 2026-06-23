@@ -17,6 +17,17 @@
   <div v-show="isCanvasReady && hasUserStarted" class="p-wall">
     <!-- 固定 445:250 比例的展示舞台，置中、不超出螢幕，外圍以黑色填滿 -->
     <div class="p-wall__stage">
+      <!-- 背景影片：自動播放、循環、靜音；亮度由 JS 隨播放進度微調（前段不變、後段微亮） -->
+      <video
+        ref="bgVideoRef"
+        class="p-wall__bg-video"
+        src="/canvasBg.mp4"
+        autoplay
+        loop
+        muted
+        playsinline
+        aria-hidden="true"
+      />
       <!-- 左側 12×12 paper.webp 格陣：依 font 編號決定固定格位（font-01 右上 → font-144 左下） -->
       <div ref="gridRef" class="p-wall__grid">
         <div
@@ -47,6 +58,26 @@
       >
         <div class="p-wall__cell-note">
           <StickyNote :note="spotlightNote" />
+        </div>
+      </div>
+
+      <!-- idle 招呼：沒有字在右側聚光展示時，猴子走入畫面招呼觀眾；有字進來時走出畫面 -->
+      <div v-if="showIdleOverlay" class="p-wall__reset-stage">
+        <div class="p-wall__reset-group" :class="{ 'is-in': idleMonkeyIn }">
+          <img
+            src="/monkey.webp"
+            alt=""
+            aria-hidden="true"
+            class="p-wall__reset-monkey"
+          />
+          <Transition name="p-wall-reset-chat">
+            <div v-if="idleChatIn" class="p-wall__reset-chat">
+              <img src="/chat.webp" alt="" aria-hidden="true" class="p-wall__reset-chat-bg" />
+              <div class="p-wall__reset-chat-text">
+                <p class="p-wall__reset-chat-main">{{ IDLE_TEXT }}</p>
+              </div>
+            </div>
+          </Transition>
         </div>
       </div>
 
@@ -132,9 +163,9 @@ const TOTAL_CELLS = GRID_COLS * GRID_ROWS // 144
 const SPOTLIGHT_HOLD_MS = 10000
 
 /* ─── 測試模式 ─── */
-/** 測試版：只要前 TEST_CAPACITY 格（對應 font-01~03）都填滿，就進入 reset 流程 */
+/** 測試版：只要前 TEST_CAPACITY 格（對應 font-01~05）都填滿，就進入 reset 流程 */
 const TEST_MODE = true
-const TEST_CAPACITY = 3
+const TEST_CAPACITY = 5
 /** 對話框文字打完後的停留時間 */
 const RESET_TEXT_HOLD_MS = 4000
 
@@ -192,6 +223,7 @@ const hasUserStarted = ref(false)
 
 const gridRef = ref<HTMLElement | null>(null)
 const spotlightRef = ref<HTMLElement | null>(null)
+const bgVideoRef = ref<HTMLVideoElement | null>(null)
 
 /** 144 個固定格位目前的便利貼（null = 空） */
 const gridNotes = reactive<(Note | null)[]>(new Array(TOTAL_CELLS).fill(null))
@@ -248,12 +280,21 @@ let resetTimers: ReturnType<typeof setTimeout>[] = []
 /* reset 對話文字內容（沿用原本的右側提示文字） */
 const RESET_MAIN_TEXT = '謝謝大家的參與'
 const RESET_SUB_TEXT = '稿紙即將更新！'
+
+/* ─── idle 招呼猴子 ─── */
+/** 沒有字在右側聚光展示時，猴子走入畫面的招呼台詞 */
+const IDLE_TEXT = '快來一起完成千字文吧！'
+/** idle 招呼 stage（猴子 + 對話框）是否掛載 */
+const showIdleOverlay = ref(false)
+/** idle 猴子是否已走入定位 */
+const idleMonkeyIn = ref(false)
+/** idle 對話框是否淡入 */
+const idleChatIn = ref(false)
+let idleTimers: ReturnType<typeof setTimeout>[] = []
 /** 猴子走入畫面的動畫時間（需與 _canvas.scss 一致） */
 const MONKEY_WALK_MS = 1400
 /** 對話框淡入時間 */
 const CHAT_IN_MS = 450
-/** 逐字打字每字間隔 */
-const TYPE_CHAR_MS = 150
 
 /* 綠幕去背影片 refs + controller */
 const chromaCanvasRef = ref<HTMLCanvasElement | null>(null)
@@ -279,19 +320,60 @@ function maybeTriggerReset() {
   if (filledTestCount() >= TEST_CAPACITY) void runResetSequence()
 }
 
+/** 目前右側是否「有字在展示」（聚光中／飛行中／排隊中），或正在 reset */
+function isDisplayingChar(): boolean {
+  return (
+    !!spotlightNote.value ||
+    spotlightBusy ||
+    spotQueue.length > 0 ||
+    resetInProgress ||
+    showResetOverlay.value
+  )
+}
+
+/** idle 猴子走入畫面招呼（僅在沒有字展示時） */
+function showIdleMonkey() {
+  if (isDisplayingChar()) return
+  // 已經在畫面中（走入完成）就不重來，避免重置 is-in 造成閃一下
+  if (showIdleOverlay.value && idleMonkeyIn.value) return
+  idleTimers.forEach(clearTimeout)
+  idleTimers = []
+  // 確保從「畫面外」起步：先清掉 is-in，再掛載 overlay
+  idleMonkeyIn.value = false
+  idleChatIn.value = false
+  showIdleOverlay.value = true
+  // 雙重 rAF：先讓瀏覽器把「畫面外」(translateX 140%) 的初始狀態畫出一幀，
+  // 第二幀才加 is-in，transition 才會由畫面外滑入。
+  // （單一 rAF 會因 Vue 的 class 變更為非同步套用，首幀就停在定位 → 瞬間出現）
+  nextTick(() => requestAnimationFrame(() => requestAnimationFrame(() => {
+    if (!showIdleOverlay.value) return
+    idleMonkeyIn.value = true
+    // 走到定位後對話框才淡入（與 reset 同步驟）
+    idleTimers.push(setTimeout(() => { idleChatIn.value = true }, MONKEY_WALK_MS))
+  })))
+}
+
+/** idle 猴子走出畫面（有字進來或進入 reset 時） */
+function hideIdleMonkey() {
+  if (!showIdleOverlay.value) return
+  idleTimers.forEach(clearTimeout)
+  idleTimers = []
+  idleChatIn.value = false
+  idleMonkeyIn.value = false
+  // 走出畫面（transition 結束）後卸載
+  idleTimers.push(setTimeout(() => { showIdleOverlay.value = false }, MONKEY_WALK_MS))
+}
+
+/** 依目前是否有字展示，決定 idle 猴子進場／退場 */
+function updateIdleMonkey() {
+  if (isDisplayingChar()) hideIdleMonkey()
+  else showIdleMonkey()
+}
+
 const wait = (ms: number) =>
   new Promise<void>(resolve => {
     resetTimers.push(setTimeout(resolve, ms))
   })
-
-/** 逐字打字：把 full 一個字一個字寫進 target，每字間隔 TYPE_CHAR_MS */
-async function typeOut(target: typeof typedMain, full: string) {
-  target.value = ''
-  for (const ch of full) {
-    target.value += ch
-    await wait(TYPE_CHAR_MS)
-  }
-}
 
 /**
  * Reset 流程：
@@ -304,6 +386,13 @@ async function typeOut(target: typeof typedMain, full: string) {
 async function runResetSequence() {
   resetInProgress = true
 
+  // 進入 reset：先收掉 idle 招呼猴子，避免與 reset 猴子重疊
+  idleTimers.forEach(clearTimeout)
+  idleTimers = []
+  showIdleOverlay.value = false
+  idleMonkeyIn.value = false
+  idleChatIn.value = false
+
   // 1. 猴子走入畫面
   showResetOverlay.value = true
   await nextTick()
@@ -311,11 +400,11 @@ async function runResetSequence() {
   monkeyIn.value = true
   await wait(MONKEY_WALK_MS)
 
-  // 2. 對話框淡入 + 文字逐字出現
+  // 2. 對話框淡入：文字直接整段帶出（與 idle 招呼一致，不再逐字打字）
+  typedMain.value = RESET_MAIN_TEXT
+  typedSub.value = RESET_SUB_TEXT
   chatIn.value = true
   await wait(CHAT_IN_MS)
-  await typeOut(typedMain, RESET_MAIN_TEXT)
-  await typeOut(typedSub, RESET_SUB_TEXT)
   await wait(RESET_TEXT_HOLD_MS)
 
   // 3. 綠幕去背影片順向播放
@@ -343,6 +432,8 @@ async function runResetSequence() {
   showResetVideo.value = false
 
   resetInProgress = false
+  // reset 後畫面清空、沒有字展示 → 猴子走入招呼
+  updateIdleMonkey()
 }
 
 /* ══════════════════════════════════════════════
@@ -371,6 +462,8 @@ function applyHistory(items: Note[]) {
     initialized = true
     broadcastState()
     maybeTriggerReset()
+    // 載入完成且沒有字在右側聚光展示 → 猴子走入招呼
+    updateIdleMonkey()
     return
   }
 
@@ -439,6 +532,8 @@ async function processSpotlightQueue() {
 
   const note = spotQueue.shift()!
   spotlightNote.value = note
+  // 有字進來：猴子退出螢幕畫面
+  hideIdleMonkey()
   // 從排隊移到聚光：重新廣播，確保 live_grid 仍含此字（避免落格前的空窗讓 editor 重複發字）
   broadcastState()
   await nextTick()
@@ -452,6 +547,8 @@ async function processSpotlightQueue() {
   await flyToCell(note)
 
   spotlightBusy = false
+  // 佇列清空且沒有 reset 進行：沒有字在展示 → 猴子走入招呼
+  if (!spotQueue.length) updateIdleMonkey()
   void processSpotlightQueue()
 }
 
@@ -661,9 +758,31 @@ const beginCanvasSession = async () => {
   }, 1000)
 }
 
+/* ══════════════════════════════════════════════
+   背景影片亮度：隨播放進度微調（前段維持原亮度，越接近結尾才微微調亮）
+   ══════════════════════════════════════════════ */
+/** 影片播到結尾相對起始的最大增亮幅度（0 = 不變；0.18 ≈ 微微調亮） */
+const BG_MAX_BRIGHTNESS_BOOST = 0.0915
+let bgBrightnessRaf: number | null = null
+
+const updateBgBrightness = () => {
+  const v = bgVideoRef.value
+  if (v && v.duration > 0) {
+    const p = Math.min(1, Math.max(0, v.currentTime / v.duration))
+    // p² 曲線：前段幾乎維持原亮度，越接近結尾才明顯變亮
+    const brightness = 1 + BG_MAX_BRIGHTNESS_BOOST * p * p
+    v.style.filter = `brightness(${brightness.toFixed(3)})`
+  }
+  bgBrightnessRaf = requestAnimationFrame(updateBgBrightness)
+}
+
 onMounted(async () => {
   document.body.style.margin = '0'
   document.body.style.overflow = 'hidden'
+
+  // 背景影片：靜音自動播放（保險再呼叫一次 play），並啟動亮度隨進度微調
+  bgVideoRef.value?.play().catch(() => {})
+  updateBgBrightness()
 
   // 背景預載 GSAP，讓第一個聚光飛入時不需等待動態載入
   if (typeof window !== 'undefined') import('gsap').catch(() => {})
@@ -702,6 +821,8 @@ onUnmounted(() => {
   if (interstitialArmTimer) { clearInterval(interstitialArmTimer); interstitialArmTimer = null }
   if (spotlightTimer) { clearTimeout(spotlightTimer); spotlightTimer = null }
   resetTimers.forEach(clearTimeout); resetTimers = []
+  idleTimers.forEach(clearTimeout); idleTimers = []
+  if (bgBrightnessRaf != null) { cancelAnimationFrame(bgBrightnessRaf); bgBrightnessRaf = null }
   currentTween?.kill()
   chroma.destroy()
   document.body.style.margin = ''
