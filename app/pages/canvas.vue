@@ -149,6 +149,7 @@ import {
   clampInterstitialIntervalMinutes,
   parseInterstitialScheduleEnabled
 } from '~/composables/useConductor'
+import { TEST_FONT_COUNT } from '~/data/fonts'
 import type { QueueHistoryItem, QueuePendingItem } from '~/types'
 
 definePageMeta({ layout: false })
@@ -163,9 +164,10 @@ const TOTAL_CELLS = GRID_COLS * GRID_ROWS // 144
 const SPOTLIGHT_HOLD_MS = 10000
 
 /* ─── 測試模式 ─── */
-/** 測試版：只要前 TEST_CAPACITY 格（對應 font-01~05）都填滿，就進入 reset 流程 */
+/** 測試版：只要前 TEST_CAPACITY 格都填滿，就進入 reset 流程。
+ *  字數統一由 fonts.ts 的 TEST_FONT_COUNT 控制（編輯器可選字池與此處同源）。 */
 const TEST_MODE = true
-const TEST_CAPACITY = 5
+const TEST_CAPACITY = TEST_FONT_COUNT
 /** 對話框文字打完後的停留時間 */
 const RESET_TEXT_HOLD_MS = 4000
 

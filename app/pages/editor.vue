@@ -915,7 +915,7 @@ const MAX_STICKERS = 10
 const addSticker = (stickerType: string) => {
   if (stickers.value.length >= MAX_STICKERS) {
     showAlert(
-      `每張便利貼最多只能貼 ${MAX_STICKERS} 個貼紙喔！如果需要更多空間，可以先刪除一些。`,
+      `每隻字怪最多只能貼 ${MAX_STICKERS} 個貼紙喔！如果需要更多空間，可以先刪除一些。`,
       '貼紙數量達上限',
       '⚠️'
     )
@@ -1436,8 +1436,8 @@ const handleShare = async () => {
 
     if (navigator.share && navigator.canShare && navigator.canShare({ files: [file] })) {
       await navigator.share({
-        title: '故宮南院 便利貼',
-        text: '這是我剛畫好的便利貼！',
+        title: '故宮南院 藝字遊戲',
+        text: '這是我剛寫好的字怪！',
         files: [file]
       })
     } else {
