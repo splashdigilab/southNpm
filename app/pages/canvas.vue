@@ -764,19 +764,6 @@ const beginCanvasSession = async () => {
    背景影片亮度：隨播放進度微調（前段維持原亮度，越接近結尾才微微調亮）
    ══════════════════════════════════════════════ */
 /** 影片播到結尾相對起始的最大增亮幅度（0 = 不變；0.18 ≈ 微微調亮） */
-const BG_MAX_BRIGHTNESS_BOOST = 0.0915
-let bgBrightnessRaf: number | null = null
-
-const updateBgBrightness = () => {
-  const v = bgVideoRef.value
-  if (v && v.duration > 0) {
-    const p = Math.min(1, Math.max(0, v.currentTime / v.duration))
-    // p² 曲線：前段幾乎維持原亮度，越接近結尾才明顯變亮
-    const brightness = 1 + BG_MAX_BRIGHTNESS_BOOST * p * p
-    v.style.filter = `brightness(${brightness.toFixed(3)})`
-  }
-  bgBrightnessRaf = requestAnimationFrame(updateBgBrightness)
-}
 
 onMounted(async () => {
   document.body.style.margin = '0'
@@ -784,7 +771,6 @@ onMounted(async () => {
 
   // 背景影片：靜音自動播放（保險再呼叫一次 play），並啟動亮度隨進度微調
   bgVideoRef.value?.play().catch(() => {})
-  updateBgBrightness()
 
   // 背景預載 GSAP，讓第一個聚光飛入時不需等待動態載入
   if (typeof window !== 'undefined') import('gsap').catch(() => {})
