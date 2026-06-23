@@ -665,13 +665,15 @@ const autoSelectFont = async (): Promise<string | null> => {
     getUsedFonts(),
     fontReservation.getReservedFonts()
   ])
-  const exclude = new Set<string>([...used, ...reserved])
+  // 本分頁剛交棒、還沒在 live_grid 現身的字也要排除，否則「連續送字」會在過渡窗內又挑回它而撞字
+  const handedOff = fontReservation.getRecentlyHandedOffFonts()
+  const exclude = new Set<string>([...used, ...reserved, ...handedOff])
   const candidates = shuffle(ACTIVE_FONT_LIST.filter(id => !exclude.has(id)))
   let claimed = await fontReservation.claimFont(candidates)
-  // 後備：只排除「牆上正在顯示」的字(used)，允許搶可能已過期釋放的預約；
-  // 但絕不去搶已經出現在 canvas 上的字，避免跟大螢幕重複。全在牆上 → 回傳 null。
+  // 後備：只排除「牆上正在顯示」的字(used)＋剛交棒的字，允許搶可能已過期釋放的別人預約；
+  // 但絕不去搶已經出現在 canvas 上、或自己剛送出的字，避免跟大螢幕重複。全在牆上 → 回傳 null。
   if (!claimed) {
-    const retry = shuffle(ACTIVE_FONT_LIST.filter(id => !used.has(id)))
+    const retry = shuffle(ACTIVE_FONT_LIST.filter(id => !used.has(id) && !handedOff.has(id)))
     claimed = await fontReservation.claimFont(retry)
   }
   return claimed
@@ -721,12 +723,14 @@ const ensureFontBeforeSubmit = async () => {
   // 若它已經出現在 canvas 上，就算還是自己的預約也要換掉，避免跟大螢幕重複。
   if (current && !used.has(current) && (await fontReservation.claimFont([current]))) return
 
-  const exclude = new Set<string>([...used, ...reserved])
+  // 換字時也排除本分頁稍早交棒、還沒上牆的字，避免換到自己剛送出的字而撞字
+  const handedOff = fontReservation.getRecentlyHandedOffFonts()
+  const exclude = new Set<string>([...used, ...reserved, ...handedOff])
   const candidates = shuffle(ACTIVE_FONT_LIST.filter(id => !exclude.has(id)))
   let claimed = await fontReservation.claimFont(candidates)
-  // 後備同樣只排除牆上的字，絕不搶 canvas 上已有的字
+  // 後備同樣排除牆上的字＋剛交棒的字，絕不搶 canvas 上已有的字
   if (!claimed) {
-    const retry = shuffle(ACTIVE_FONT_LIST.filter(id => !used.has(id)))
+    const retry = shuffle(ACTIVE_FONT_LIST.filter(id => !used.has(id) && !handedOff.has(id)))
     claimed = await fontReservation.claimFont(retry)
   }
   if (claimed) selectedFontId.value = claimed

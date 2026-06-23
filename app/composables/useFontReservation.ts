@@ -57,6 +57,24 @@ export const useFontReservation = () => {
   // 最後一次使用者互動時間：續約以此為基準（expiresAt = lastActivityAt + TTL）
   let lastActivityAt = Date.now()
 
+  /**
+   * 本分頁「剛送出、已交棒給牆面但可能還沒在 live_grid 現身」的字（font → 寬限到期 ms）。
+   * getReservedFonts 會略過自己分頁的預約，因此同一分頁在 HANDOFF_GRACE_MS 過渡窗內連續送字時，
+   * autoSelect 讀不到剛交棒的字（它還沒進牆面 live_grid）就可能又挑回同一個 → 跟牆上撞字。
+   * 用這份本地清單把這些字暫時排除，撐到它安全上牆（被 live_grid 涵蓋）為止。
+   */
+  const recentlyHandedOff = new Map<string, number>()
+  /** 取出本分頁仍在過渡窗內、尚未確認上牆的字（過期即清掉） */
+  const getRecentlyHandedOffFonts = (): Set<string> => {
+    const now = Date.now()
+    const out = new Set<string>()
+    for (const [font, exp] of recentlyHandedOff) {
+      if (exp > now) out.add(font)
+      else recentlyHandedOff.delete(font)
+    }
+    return out
+  }
+
   /** 記錄一次使用者互動（觸控/點擊/下筆…），讓正在操作的人持續保住字 */
   const markActivity = (): void => { lastActivityAt = Date.now() }
 
@@ -162,6 +180,8 @@ export const useFontReservation = () => {
     const font = currentFont
     if (!font) return
     currentFont = null // 交棒後不再持有：避免卸載時又被 releaseFont/renew 動到
+    // 記錄為「本分頁剛交棒」：同分頁在過渡窗內若再選字，autoSelect 會排除它，避免又挑回而撞字
+    recentlyHandedOff.set(font, Date.now() + HANDOFF_GRACE_MS)
     try {
       await setDoc(doc(db, RESERVATION_COL, font), {
         owner,
@@ -216,6 +236,7 @@ export const useFontReservation = () => {
   return {
     owner,
     getReservedFonts,
+    getRecentlyHandedOffFonts,
     claimFont,
     releaseFont,
     releaseFontBeacon,

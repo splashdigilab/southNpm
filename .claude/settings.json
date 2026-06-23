@@ -45,7 +45,8 @@
       "Bash(grep -rniE \"idle|inactiv|閒置|沒.{0,4}\\(操作|送出|動作\\)|自動|auto|reset|timeout|setTimeout|_MS|無動作|清空|clear\" app/pages/editor.vue)",
       "WebFetch(domain:jameshfisher.com)",
       "Bash(mdls -name kMDItemDurationSeconds -name kMDItemPixelWidth -name kMDItemPixelHeight /Users/kevin/Documents/Github/southNpm/public/resetAnimation.mp4)",
-      "Bash(ipconfig getifaddr *)"
+      "Bash(ipconfig getifaddr *)",
+      "Bash(echo \"exit: count=$\\(npx vue-tsc --noEmit -p tsconfig.json 2>&1)"
     ],
     "additionalDirectories": [
       "/Users/kevin/Documents/Github/southNpm/app/composables",
