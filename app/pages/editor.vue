@@ -399,7 +399,7 @@ import { ref, computed, watch, nextTick, onMounted, onUnmounted } from 'vue'
 import type { StickerInstance, StickyNoteStyle } from '~/types'
 import { getStickerById, STICKER_LIBRARY } from '~/data/stickers'
 import { EDITOR_TABS, CALLIGRAPHY_BRUSH_COLOR, BRUSH_SIZES, DEFAULT_BRUSH_SIZE } from '~/data/editor-config'
-import { ACTIVE_FONT_LIST, getFontUrl } from '~/data/fonts'
+import { ACTIVE_FONT_LIST, getFontUrl, TEST_MODE } from '~/data/fonts'
 import { getStickerStyle } from '~/utils/sticky-note-style'
 import { useStickerInteraction } from '~/composables/useStickerInteraction'
 import { useCanvasPinch } from '~/composables/useCanvasPinch'
@@ -501,11 +501,22 @@ const WALL_CAPACITY = 144
  * 正常營運（大螢幕有在跑）時完全不會去讀 queue_history，省下數 MB 下載。
  * 過時只會多排除、不會造成撞字，安全。
  */
+/**
+ * wall_resetting 旗標的最大信任時效（毫秒）。
+ * 健康的 reset 全程約十幾秒、且每階段都會重新廣播刷新 updated_at，故遠在此值內；
+ * 超過代表大螢幕多半已在 reset 途中關閉而旗標卡住，改為忽略以免編輯器被永久鎖死。
+ */
+const RESET_FLAG_MAX_AGE_MS = 60_000
+
 const getUsedFonts = async (): Promise<Set<string>> => {
   const used = new Set<string>()
-  const collectFonts = (docs: { data: () => any }[]) => {
+  const collectFonts = (docs: { data: () => any }[], skipCleared = false) => {
     for (const d of docs) {
-      const f = d.data()?.style?.font
+      const data = d.data()
+      // 後備讀 queue_history 時略過 reset 標記為 cleared 的字：畫面已清掉、字帖已釋放，
+      // 只是 DB 沒刪。不略過就會把這些舊字當成 used 而誤判無字可選。
+      if (skipCleared && data?.cleared === true) continue
+      const f = data?.style?.font
       if (typeof f === 'string' && f) used.add(f)
     }
   }
@@ -529,7 +540,19 @@ const getUsedFonts = async (): Promise<Set<string>> => {
   let liveGridAvailable = false
   if (stateRes.status === 'fulfilled') {
     const snap = stateRes.value
-    const liveGrid = snap.exists() ? (snap.data() as any)?.live_grid : null
+    const state = snap.exists() ? (snap.data() as any) : null
+    // 牆面 reset 進行中（含 live_grid 已清空但畫面尚未清乾淨的尾段）：一律當全滿，
+    // 把所有可選字標為 used，讓編輯器擋住進場、顯示「正在準備新稿紙」而非進來撞 reset。
+    // 但只信任「夠新」的旗標：若大螢幕在 reset 途中被關閉（finally 來不及執行），
+    // wall_resetting 會卡在 true；用 updated_at 過期判斷，避免所有編輯器被永久鎖死。
+    const updatedAt = Number(state?.updated_at)
+    const resetFlagFresh =
+      Number.isFinite(updatedAt) && Date.now() - updatedAt < RESET_FLAG_MAX_AGE_MS
+    if (state?.wall_resetting === true && resetFlagFresh) {
+      for (const id of ACTIVE_FONT_LIST) used.add(id)
+      return used
+    }
+    const liveGrid = state?.live_grid ?? null
     if (Array.isArray(liveGrid)) {
       liveGridAvailable = true // 牆有廣播過（含空陣列＝牆上目前沒字）→ 視為權威，不需重讀 history
       for (const g of liveGrid) addFont(g?.style?.font)
@@ -548,7 +571,7 @@ const getUsedFonts = async (): Promise<Set<string>> => {
     )
     try {
       const historySnap = await withTimeout(getDocs(historyQ))
-      collectFonts(historySnap.docs)
+      collectFonts(historySnap.docs, true)
     } catch (e) {
       console.debug('[Editor] queue_history 後備讀取失敗', e)
     }
@@ -633,11 +656,13 @@ const refreshDisabledFonts = async (fresh = false) => {
  * 仍搶不到代表牆已滿、回傳 null。
  */
 const autoSelectFont = async (): Promise<string | null> => {
-  // 測試版只有 3 個字，必須嚴格避開「牆上已顯示」的字，否則描紅字帖會跟 canvas 重複。
-  // 因此這裡一定等真正的已用字讀完（prefetch 在 onMounted 已先發動，正常情況幾乎即時），
-  // 不再用「逾時就當作空集合」的捷徑——那會在牆上有字時誤判為可選而撞字。
+  // 測試版只有 5 個字，必須嚴格避開「牆上已顯示」的字，否則描紅字帖會跟 canvas 重複。
+  // 進場決策一律「當下強制重讀」最新牆況：onMounted 的 prefetch 可能在 reset 開始前就快取，
+  // 沿用會誤判（牆已滿卻當有空位／reset 中卻沒擋住）。故這裡丟掉快取改讀 fresh getUsedFonts()，
+  // 確保 wall_resetting 與 live_grid 都是按下「開始」這一刻的真實狀態。
+  invalidateUsedFontsCache()
   const [used, reserved] = await Promise.all([
-    prefetchUsedFonts(),
+    getUsedFonts(),
     fontReservation.getReservedFonts()
   ])
   const exclude = new Set<string>([...used, ...reserved])
@@ -1023,7 +1048,8 @@ const openSubmitModal = () => {
     return
   }
 
-  if (!tokenRequiredForSubmit.value) {
+  // 測試模式停用上傳冷卻，方便連續送字驗證流程
+  if (!tokenRequiredForSubmit.value && !TEST_MODE) {
     const remainingCooldownMs = getTokenDisabledRemainingCooldownMs()
     if (remainingCooldownMs > 0) {
       showAlert(
@@ -1219,7 +1245,8 @@ const validateGeoFenceBeforeSubmit = async (): Promise<boolean> => {
 const confirmSubmit = async () => {
   if (isSubmitting.value) return
 
-  if (!tokenRequiredForSubmit.value) {
+  // 測試模式停用上傳冷卻，方便連續送字驗證流程
+  if (!tokenRequiredForSubmit.value && !TEST_MODE) {
     const remainingCooldownMs = getTokenDisabledRemainingCooldownMs()
     if (remainingCooldownMs > 0) {
       showSubmitModal.value = false
@@ -1341,8 +1368,8 @@ const confirmSubmit = async () => {
     fontReservation.stopHeartbeat()
     void fontReservation.handOffToWall()
 
-    // 上傳成功：清除快取的 Token
-    if (!tokenRequiredForSubmit.value) {
+    // 上傳成功：記錄冷卻起點（測試模式不記，反正也不檢查冷卻）
+    if (!tokenRequiredForSubmit.value && !TEST_MODE) {
       saveTokenDisabledSubmitTimestamp()
     }
     if (tokenRequiredForSubmit.value && tokenForSubmit) {

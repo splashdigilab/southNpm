@@ -140,7 +140,7 @@
 
 <script setup lang="ts">
 import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
-import { doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore'
+import { doc, getDoc, setDoc, onSnapshot, collection, getDocs, deleteDoc } from 'firebase/firestore'
 import StickyNote from '~/components/StickyNote.vue'
 import { useFirestore } from '~/composables/useFirestore'
 import { useChromaVideo } from '~/composables/useChromaVideo'
@@ -149,7 +149,7 @@ import {
   clampInterstitialIntervalMinutes,
   parseInterstitialScheduleEnabled
 } from '~/composables/useConductor'
-import { TEST_FONT_COUNT } from '~/data/fonts'
+import { TEST_FONT_COUNT, TEST_MODE } from '~/data/fonts'
 import type { QueueHistoryItem, QueuePendingItem } from '~/types'
 
 definePageMeta({ layout: false })
@@ -165,8 +165,7 @@ const SPOTLIGHT_HOLD_MS = 10000
 
 /* ─── 測試模式 ─── */
 /** 測試版：只要前 TEST_CAPACITY 格都填滿，就進入 reset 流程。
- *  字數統一由 fonts.ts 的 TEST_FONT_COUNT 控制（編輯器可選字池與此處同源）。 */
-const TEST_MODE = true
+ *  TEST_MODE／字數統一由 fonts.ts 控制（編輯器可選字池與此處同源）。 */
 const TEST_CAPACITY = TEST_FONT_COUNT
 /** 對話框文字打完後的停留時間 */
 const RESET_TEXT_HOLD_MS = 4000
@@ -285,7 +284,7 @@ const RESET_SUB_TEXT = '稿紙即將更新！'
 
 /* ─── idle 招呼猴子 ─── */
 /** 沒有字在右側聚光展示時，猴子走入畫面的招呼台詞 */
-const IDLE_TEXT = '快來一起完成千字文吧！'
+const IDLE_TEXT = '大家快來一起完成千字文吧！'
 /** idle 招呼 stage（猴子 + 對話框）是否掛載 */
 const showIdleOverlay = ref(false)
 /** idle 猴子是否已走入定位 */
@@ -385,9 +384,42 @@ const wait = (ms: number) =>
  *   4. 綠幕去背影片反向播放，露出清空後的畫面，結束。
  * 注意：knownIds 不清除，避免 history listener 把同一批字當新字重新補回畫面。
  */
+/**
+ * Reset 時清空所有字帖預約（font_reservations）。
+ * reset 把牆面清乾淨、字帖全部釋放回可選池；但預約是編輯器端各自留下的鎖，
+ * 若不清，剛送出的字（交棒寬限 15s）或還開著的編輯器（續約最長 1 分鐘）會把
+ * 測試模式僅有的 5 個字鎖死，造成「牆已清空卻仍跳無字帖」。
+ */
+async function clearAllReservations() {
+  try {
+    const snap = await getDocs(collection(db, 'font_reservations'))
+    await Promise.all(snap.docs.map(d => deleteDoc(d.ref).catch(() => {})))
+  } catch (e) {
+    console.debug('[wall] 清空字帖預約失敗，交給 TTL 回收', e)
+  }
+}
+
+/**
+ * Reset 時把被清掉的字在 queue_history 標記為 cleared（不刪資料庫）。
+ * 編輯器在 live_grid 不可用而退回讀 queue_history 時，會略過 cleared 的字，
+ * 避免讀到「畫面已清掉但 DB 仍在」的舊字而誤判無字可選。
+ */
+async function markHistoryCleared(notes: Note[]) {
+  await Promise.all(
+    notes.map(n => {
+      const id = n?.id
+      if (!id) return Promise.resolve()
+      return setDoc(doc(db, 'queue_history', id), { cleared: true }, { merge: true }).catch(() => {})
+    })
+  )
+}
+
 async function runResetSequence() {
   resetInProgress = true
+  // 立刻廣播 reset 旗標：即使 live_grid 此刻仍滿，編輯器也應整段 reset 期間擋住進場
+  broadcastState()
 
+  try {
   // 進入 reset：先收掉 idle 招呼猴子，避免與 reset 猴子重疊
   idleTimers.forEach(clearTimeout)
   idleTimers = []
@@ -415,9 +447,13 @@ async function runResetSequence() {
   if (chromaReady) await chroma.playForward()
 
   // 順向播完的同時：清空格陣（只清畫面，保留 knownIds）並移除對話 stage
-  for (const n of gridNotes) if (n) clearedTokens.add(getId(n))
-  if (spotlightNote.value) clearedTokens.add(getId(spotlightNote.value))
+  const clearedNotes: Note[] = []
+  for (const n of gridNotes) if (n) { clearedTokens.add(getId(n)); clearedNotes.push(n) }
+  if (spotlightNote.value) { clearedTokens.add(getId(spotlightNote.value)); clearedNotes.push(spotlightNote.value) }
   persistClearedTokens()
+  // 字帖全部釋放回可選池：清掉預約鎖、並把這批字在 queue_history 標記為 cleared（不刪 DB）
+  void clearAllReservations()
+  void markHistoryCleared(clearedNotes)
   for (let i = 0; i < gridNotes.length; i++) gridNotes[i] = null
   spotlightNote.value = null
   showResetOverlay.value = false
@@ -432,8 +468,17 @@ async function runResetSequence() {
   // 4. 綠幕去背影片反向播放，露出已清空的畫面
   if (chromaReady) await chroma.playReverse()
   showResetVideo.value = false
-
-  resetInProgress = false
+  } finally {
+    // 不論中途是否出錯（含 chroma 播放例外），都務必解除 reset 狀態並再廣播一次清掉
+    // wall_resetting 旗標。否則旗標會卡在 true，把所有編輯器永久擋在「準備新稿紙」而無法進場。
+    showResetVideo.value = false
+    showResetOverlay.value = false
+    monkeyIn.value = false
+    chatIn.value = false
+    resetting.value = false
+    resetInProgress = false
+    broadcastState()
+  }
   // reset 後畫面清空、沒有字展示 → 猴子走入招呼
   updateIdleMonkey()
 }
@@ -617,6 +662,9 @@ function broadcastState() {
     mode: live.length ? 'live' : 'idle',
     now_playing: null,
     live_grid,
+    // reset 進行中（含清空格陣後到反向影片播完）一律標記，讓編輯器整段期間擋住進場，
+    // 避免「live_grid 已清空但牆面尚未清乾淨」的尾段被當成有空位而進來送字。
+    wall_resetting: resetInProgress,
     updated_at: Date.now()
   }).catch(e => console.error('[wall] broadcast', e))
 }

@@ -160,4 +160,11 @@ export type FontId = typeof FONT_LIST[number]
 export const TEST_FONT_COUNT = 5
 export const ACTIVE_FONT_LIST = FONT_LIST.slice(0, TEST_FONT_COUNT)
 
+/**
+ * 測試模式旗標：只要開放字數少於完整 144 字即視為測試模式。
+ * 供 canvas（reset/clearedTokens 流程）與 editor（停用上傳冷卻）共用同一判斷，
+ * 恢復正式版把 TEST_FONT_COUNT 改回 FONT_LIST.length 後會自動關閉測試行為。
+ */
+export const TEST_MODE = TEST_FONT_COUNT < FONT_LIST.length
+
 export const getFontUrl = (id: string): string => `/font/${id}.svg`

@@ -57,6 +57,8 @@ export interface QueueHistoryItem {
   timestamp: Timestamp
   status: 'played'
   playedAt: Timestamp
+  /** 牆面 reset 時標記（不刪 DB）：編輯器後備讀 queue_history 時略過 */
+  cleared?: boolean
 }
 
 /**
@@ -83,5 +85,7 @@ export interface CurrentStateData {
   mode: 'live' | 'idle' | 'waiting'
   now_playing: QueueHistoryItem | QueuePendingItem | null
   live_grid: (QueueHistoryItem | QueuePendingItem)[]
+  /** 牆面 reset 進行中：編輯器於此期間擋住進場，避免撞 reset */
+  wall_resetting?: boolean
   updated_at: number
 }
