@@ -46,7 +46,8 @@
       "WebFetch(domain:jameshfisher.com)",
       "Bash(mdls -name kMDItemDurationSeconds -name kMDItemPixelWidth -name kMDItemPixelHeight /Users/kevin/Documents/Github/southNpm/public/resetAnimation.mp4)",
       "Bash(ipconfig getifaddr *)",
-      "Bash(echo \"exit: count=$\\(npx vue-tsc --noEmit -p tsconfig.json 2>&1)"
+      "Bash(echo \"exit: count=$\\(npx vue-tsc --noEmit -p tsconfig.json 2>&1)",
+      "Bash(echo \"errors: $\\(npx vue-tsc --noEmit -p tsconfig.json 2>&1)"
     ],
     "additionalDirectories": [
       "/Users/kevin/Documents/Github/southNpm/app/composables",

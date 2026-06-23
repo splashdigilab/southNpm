@@ -147,13 +147,21 @@ export const useFontReservation = () => {
     return null
   }
 
-  /** 釋放目前持有的預約（送出成功 / 卸載時呼叫） */
+  /**
+   * 釋放目前持有的預約（送出成功 / 卸載 / 換字時呼叫）。
+   * 用 transaction 確認「這個字的預約仍是自己持有」才刪：換字情境下舊字可能已被別人搶走，
+   * 無條件 deleteDoc 會誤刪別人剛拿到的鎖，造成該字短暫失去保護而被第三人重複選到。
+   */
   const releaseFont = async (): Promise<void> => {
     const font = currentFont
     if (!font) return
     currentFont = null
     try {
-      await deleteDoc(doc(db, RESERVATION_COL, font))
+      await runTransaction(db, async (tx) => {
+        const ref = doc(db, RESERVATION_COL, font)
+        const snap = await tx.get(ref)
+        if (snap.exists() && (snap.data() as { owner?: string }).owner === owner) tx.delete(ref)
+      })
     } catch (e) {
       console.debug('[reservation] 釋放失敗，交給 TTL 回收', font, e)
     }

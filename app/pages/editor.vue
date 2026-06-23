@@ -711,19 +711,21 @@ const confirmFontSelection = async () => {
 }
 
 /**
- * 送出前確保字帖仍是自己的：重新搶佔目前 selectedFontId。
- * 搶得回（還是自己的／已過期釋放）→ 沿用；被別人佔走 → 讀最新已用字＋預約，
- * 從可選池當場換一個並佔起來。字帖只決定牆上格位，換字對使用者內容無感。
+ * 送出前確認字帖是否仍是自己的。牆位是語意性的（千字文 font-NN 對應固定格），
+ * 所以「描的字 ↔ 落點」必須一致，不能靜默換字後直接送。回傳：
+ *   'ok'         → 原字還保得住，可直接送出。
+ *   'reselected' → 原字被別人搶走，已改挑一個新字帖並設給 selectedFontId；
+ *                  呼叫端應中止此次送出、提示使用者依新描紅重描後再送。
+ *   'unavailable'→ 連新字都搶不到（牆滿／reset 中），呼叫端中止並提示稍候。
  */
-const ensureFontBeforeSubmit = async () => {
+const ensureFontBeforeSubmit = async (): Promise<'ok' | 'reselected' | 'unavailable'> => {
   // 最新「牆上已用字」與預約：打開送出 modal 時已先發動讀取，這裡多半直接取現成結果，不必再等網路。
   const [used, reserved] = await consumeSubmitFontState()
   const current = selectedFontId.value
-  // 只有當目前的字「沒在牆上」且還搶得回來，才沿用；
-  // 若它已經出現在 canvas 上，就算還是自己的預約也要換掉，避免跟大螢幕重複。
-  if (current && !used.has(current) && (await fontReservation.claimFont([current]))) return
+  // 原字沒在牆上、且還搶得回來 → 沿用，直接送
+  if (current && !used.has(current) && (await fontReservation.claimFont([current]))) return 'ok'
 
-  // 換字時也排除本分頁稍早交棒、還沒上牆的字，避免換到自己剛送出的字而撞字
+  // 原字被佔走（或已出現在牆上）：改挑一個新字。排除牆上已用、別人預約、及本分頁剛交棒還沒上牆的字。
   const handedOff = fontReservation.getRecentlyHandedOffFonts()
   const exclude = new Set<string>([...used, ...reserved, ...handedOff])
   const candidates = shuffle(ACTIVE_FONT_LIST.filter(id => !exclude.has(id)))
@@ -733,7 +735,10 @@ const ensureFontBeforeSubmit = async () => {
     const retry = shuffle(ACTIVE_FONT_LIST.filter(id => !used.has(id) && !handedOff.has(id)))
     claimed = await fontReservation.claimFont(retry)
   }
-  if (claimed) selectedFontId.value = claimed
+  if (!claimed) return 'unavailable'
+  // 換上新字帖，但不直接送：要求使用者依新描紅重描，確保牆上該格的筆跡就是該格的字
+  selectedFontId.value = claimed
+  return 'reselected'
 }
 
 // confirmSubmit 用：取用「打開 modal 時就先發動」的牆況讀取結果（多半已就緒），用完即失效
@@ -1351,9 +1356,27 @@ const confirmSubmit = async () => {
       return
     }
 
-    // 2. 送出前重新搶佔字帖：閒置期間字可能已被釋放或被別人拿走，重搶以免跟牆上撞字。
-    //    搶不回（已被別人佔走）就當場換一個可用字——字帖只決定牆上的格位，不影響使用者內容。
-    await ensureFontBeforeSubmit()
+    // 2. 送出前重新搶佔字帖：閒置期間字可能已被釋放或被別人拿走。牆位是語意性的（千字文每格＝特定字），
+    //    所以原字被搶走時不靜默換字硬送，而是換上新字帖、中止本次送出，請使用者依新描紅重描後再送。
+    const fontResult = await ensureFontBeforeSubmit()
+    if (fontResult === 'reselected') {
+      showSubmitModal.value = false
+      showAlert(
+        '你描的這個字剛剛被別人搶先用了，已幫你換上一張新的字帖。<br>請依畫面上新的描紅重新描寫後，再按一次送出喔！',
+        '字帖已更換',
+        '✍️'
+      )
+      return
+    }
+    if (fontResult === 'unavailable') {
+      showSubmitModal.value = false
+      showAlert(
+        '目前字帖都在使用中，稿紙可能正在更新。<br>請稍候幾秒再按一次送出。',
+        '暫無可用字帖',
+        '⏳'
+      )
+      return
+    }
 
     // 3. 狀態正確(valid)或無法判別時，嘗試正式送出
     await createNote(
