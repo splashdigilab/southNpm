@@ -28,8 +28,53 @@
         playsinline
         aria-hidden="true"
       />
+      <!-- 開場模式：狀態一 / 狀態二 動畫容器（內容待設定）。
+           狀態一（空白鍵前）目前僅以最底下的背景影片呈現，格陣隱藏。 -->
+      <div
+        v-if="introMode && introPhase === 'opening'"
+        class="p-wall__intro p-wall__intro--opening"
+        aria-hidden="true"
+      >
+        <!-- TODO: 狀態一開場動畫 -->
+      </div>
+      <div
+        v-if="introMode && introPhase === 'transition'"
+        class="p-wall__intro p-wall__intro--transition"
+        aria-hidden="true"
+      >
+        <!-- TODO: 狀態二動畫 -->
+      </div>
+
+      <!-- 開場狀態一/二：地上有幾隻角色來回走動（踏步擺動感參考原本的 monkey） -->
+      <div v-if="introWalkersVisible" class="p-wall__intro-walkers" aria-hidden="true">
+        <div
+          v-for="w in introWalkersResolved"
+          :key="w.i"
+          class="p-wall__walker"
+          :class="w.dir === 1 ? 'p-wall__walker--ltr' : 'p-wall__walker--rtl'"
+          :style="{
+            bottom: w.bottom + '%',
+            width: w.width + 'cqw',
+            zIndex: w.zIndex,
+            animationDuration: w.cross + 's',
+            animationDelay: w.delay + 's'
+          }"
+        >
+          <!-- 朝向：原圖面向固定，僅在走動方向與原圖相反時才鏡射（與踏步動畫分層，避免 transform 互相覆蓋） -->
+          <div class="p-wall__walker-face" :style="{ transform: w.dir === SPRITE_FACES_DIR ? 'scaleX(1)' : 'scaleX(-1)' }">
+            <img
+              :src="w.src"
+              alt=""
+              aria-hidden="true"
+              class="p-wall__walker-sprite"
+              :style="{ animationDuration: w.step + 's' }"
+            />
+          </div>
+        </div>
+      </div>
+
       <!-- 左側 12×12 paper.webp 格陣：依 font 編號決定固定格位（font-01 右上 → font-144 左下） -->
-      <div ref="gridRef" class="p-wall__grid">
+      <div v-show="showNormalContent" ref="gridRef" class="p-wall__grid">
         <div
           v-for="i in TOTAL_CELLS"
           :key="i"
@@ -139,7 +184,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, onMounted, onUnmounted, nextTick } from 'vue'
+import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
+import { useRoute } from 'vue-router'
 import { doc, getDoc, setDoc, onSnapshot, collection, getDocs, deleteDoc } from 'firebase/firestore'
 import StickyNote from '~/components/StickyNote.vue'
 import { useFirestore } from '~/composables/useFirestore'
@@ -221,6 +267,69 @@ function cellGridStyle(idx: number) {
 /* ─── 狀態 ─── */
 const isCanvasReady = ref(false)
 const hasUserStarted = ref(false)
+
+/* ─── 開場模式（由網址參數決定）─────────────────────────────
+ * 兩種進場方式：
+ *   1. 一般模式：網址不帶參數 → 直接進入目前的正常展示（含「開始」按鈕）。
+ *   2. 開場模式：網址帶 ?intro（如 /canvas?intro 或 ?intro=1）→ 先播開場序列。
+ *      狀態流（以空白鍵推進）：
+ *        opening    （空白鍵前）：只以最底下的背景影片呈現，格陣隱藏。狀態一動畫待設定。
+ *        ─ 按空白鍵 ─→ transition：觸發狀態二動畫（待設定）。
+ *        ─ 按空白鍵 ─→ revealing ：播放目前 reset 的綠幕去背影片，蓋滿後切入正常模式。
+ *        done       ：正常模式（與一般模式相同），開始監聽資料。
+ */
+const route = useRoute()
+type IntroPhase = 'opening' | 'transition' | 'revealing' | 'done'
+const introMode = ref(false)
+const introPhase = ref<IntroPhase>('done')
+/** 只有在正常模式（或開場序列結束）才顯示格陣等正常內容 */
+const showNormalContent = computed(() => introPhase.value === 'done')
+
+/**
+ * 開場狀態一/二：地上有幾隻角色來回走動（走動感參考原本 monkey 的踏步擺動）。
+ * 尺寸/位移皆以 cqw（舞台寬度比例）為單位，不隨螢幕變動。
+ *   bottom : 距舞台底部（%）—— 越小＝越靠畫面下方/前方，會自動「越大、圖層越前面」
+ *   cross  : 橫越舞台一趟的秒數          step  : 踏步擺動一個來回的秒數
+ *   delay  : 動畫起始延遲（負值＝一開始就分散在不同位置）
+ *   dir    : 1 = 由左往右、-1 = 由右往左
+ * 註：width / z-index 由 bottom 推導（見 introWalkersResolved），不需手動指定。
+ */
+const introWalkers = [
+  { src: '/monkey-1.svg',    bottom: 3,  cross: 34, step: 0.78, delay: 0,   dir: 1 },
+  { src: '/monster-1.svg',   bottom: 15, cross: 44, step: 0.88, delay: -4,  dir: -1 },
+  { src: '/vegetable-1.svg', bottom: 2,  cross: 30, step: 0.72, delay: -6,  dir: 1 },
+  { src: '/monkey-1.svg',    bottom: 26, cross: 48, step: 0.84, delay: -14, dir: -1 },
+  { src: '/monster-1.svg',   bottom: 9,  cross: 40, step: 0.78, delay: -16, dir: 1 },
+  { src: '/monkey-2.svg',    bottom: 20, cross: 46, step: 0.82, delay: -23, dir: 1 },
+  { src: '/monster-2.svg',   bottom: 6,  cross: 32, step: 0.74, delay: -19, dir: -1 },
+  { src: '/vegetable-2.svg', bottom: 23, cross: 52, step: 0.9,  delay: -36, dir: -1 },
+  { src: '/vegetable-1.svg', bottom: 12, cross: 36, step: 0.76, delay: -29, dir: -1 },
+  { src: '/monster-2.svg',   bottom: 17, cross: 42, step: 0.86, delay: -38, dir: 1 }
+] as const
+/** 角色原圖的面向：1 = 朝右、-1 = 朝左。走動方向與此不同時，才把圖片水平鏡射。 */
+const SPRITE_FACES_DIR = 1
+
+/** 角色由 bottom 推導景深：越靠下方（bottom 越小）→ 寬度越大、z-index 越前面。 */
+const WALKER_WIDTH_MIN = 4.5 // cqw（最上方/最遠）
+const WALKER_WIDTH_MAX = 6 // cqw（最下方/最近）
+const introWalkersResolved = computed(() => {
+  const bottoms = introWalkers.map(w => w.bottom)
+  const minB = Math.min(...bottoms)
+  const maxB = Math.max(...bottoms)
+  const span = Math.max(maxB - minB, 1e-6)
+  return introWalkers.map((w, i) => {
+    const t = (maxB - w.bottom) / span // 0 = 最上(最遠), 1 = 最下(最近)
+    return {
+      ...w,
+      i,
+      width: WALKER_WIDTH_MIN + t * (WALKER_WIDTH_MAX - WALKER_WIDTH_MIN),
+      zIndex: 20 + Math.round(t * 40) // 越靠下方圖層越前面
+    }
+  })
+})
+/** 地上走動的角色是否顯示。狀態一/二為 true；切到第三階段後仍保留，
+ *  直到綠幕順向影片播完（蓋滿畫面的瞬間）才隱藏，避免角色突兀消失。 */
+const introWalkersVisible = ref(false)
 
 const gridRef = ref<HTMLElement | null>(null)
 const spotlightRef = ref<HTMLElement | null>(null)
@@ -758,10 +867,9 @@ const onInterstitialVideoEnded = () => {
 /* ══════════════════════════════════════════════
    啟動
    ══════════════════════════════════════════════ */
-const beginCanvasSession = async () => {
-  if (hasUserStarted.value) return
-  hasUserStarted.value = true
-  await nextTick()
+/** 啟動正常模式：開始監聽 Firestore 並掛上插播排程。可由「開始」按鈕或開場序列結束時呼叫。 */
+const startNormalMode = () => {
+  if (unsubHistory) return // 已啟動，避免重複掛 listener
 
   // 載入畫面：歷史驅動格陣（最多 144 格）
   unsubHistory = listenToHistory(
@@ -808,6 +916,53 @@ const beginCanvasSession = async () => {
   }, 1000)
 }
 
+/** 一般模式：點「開始」按鈕後進入正常展示（同時取得播放/聲音所需的使用者手勢）。 */
+const beginCanvasSession = async () => {
+  if (hasUserStarted.value) return
+  hasUserStarted.value = true
+  await nextTick()
+  startNormalMode()
+}
+
+/* ─── 開場序列：以空白鍵推進 ─── */
+/** 空白鍵：依目前開場狀態推進到下一段（僅開場模式有效）。 */
+function onIntroKeyDown(e: KeyboardEvent) {
+  if (!introMode.value) return
+  if (e.code !== 'Space' && e.key !== ' ' && e.key !== 'Spacebar') return
+  e.preventDefault()
+  if (introPhase.value === 'opening') {
+    // 狀態一 → 狀態二：觸發狀態二動畫（待設定）
+    introPhase.value = 'transition'
+    // TODO: 在此啟動狀態二開場動畫
+  } else if (introPhase.value === 'transition') {
+    // 狀態二 → 播放目前 reset 的綠幕去背影片，結束後切入正常模式
+    void runIntroReveal()
+  }
+}
+
+/**
+ * 開場收尾：播放目前 reset 的綠幕去背影片（順向蓋滿 → 切入正常模式 → 反向露出）。
+ * 綠幕蓋滿畫面的那一刻才啟動資料監聽，反向播放時牆面已是正常模式。
+ */
+async function runIntroReveal() {
+  if (introPhase.value !== 'transition') return
+  introPhase.value = 'revealing'
+  showResetVideo.value = true
+  await nextTick()
+  if (chromaReady) await chroma.playForward()
+
+  // 綠幕順向播完（蓋滿畫面）的瞬間：地上角色才隱藏
+  introWalkersVisible.value = false
+
+  // 綠幕蓋滿：切入正常模式並開始監聽資料
+  introPhase.value = 'done'
+  startNormalMode()
+  await nextTick()
+
+  if (chromaReady) await chroma.playReverse()
+  showResetVideo.value = false
+}
+
 /* ══════════════════════════════════════════════
    背景影片亮度：隨播放進度微調（前段維持原亮度，越接近結尾才微微調亮）
    ══════════════════════════════════════════════ */
@@ -816,6 +971,16 @@ const beginCanvasSession = async () => {
 onMounted(async () => {
   document.body.style.margin = '0'
   document.body.style.overflow = 'hidden'
+
+  // 網址帶 ?intro（且非 0/false）→ 進入開場模式，由空白鍵推進開場序列
+  const introQ = route.query.intro
+  const introVal = Array.isArray(introQ) ? introQ[0] : introQ
+  introMode.value = introVal !== undefined && introVal !== '0' && introVal !== 'false'
+  if (introMode.value) {
+    introPhase.value = 'opening'
+    introWalkersVisible.value = true // 地上角色：開場即出現，直到綠幕順向播完才隱藏
+  }
+  window.addEventListener('keydown', onIntroKeyDown)
 
   // 背景影片：靜音自動播放（保險再呼叫一次 play），並啟動亮度隨進度微調
   bgVideoRef.value?.play().catch(() => {})
@@ -848,9 +1013,12 @@ onMounted(async () => {
   })
 
   isCanvasReady.value = true
+  // 開場模式略過「開始」按鈕，直接進入狀態一（只以最底下背景影片呈現）
+  if (introMode.value) hasUserStarted.value = true
 })
 
 onUnmounted(() => {
+  window.removeEventListener('keydown', onIntroKeyDown)
   unsubHistory?.(); unsubHistory = null
   unsubPending?.(); unsubPending = null
   unsubCanvasVideo?.(); unsubCanvasVideo = null

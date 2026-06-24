@@ -132,6 +132,94 @@
     will-change: filter;
 }
 
+/* 開場模式動畫容器（狀態一 / 狀態二）：鋪滿舞台、疊在背景影片之上，內容待設定 */
+.p-wall__intro {
+    position: absolute;
+    inset: 0;
+    z-index: 10;
+    pointer-events: none;
+}
+
+/* ─── 開場狀態一/二：地上來回走動的角色 ─── */
+.p-wall__intro-walkers {
+    position: absolute;
+    inset: 0;
+    z-index: 12;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+/* 角色外層：負責橫越舞台的位移（cqw = 舞台寬度比例，故位移不隨螢幕變動） */
+.p-wall__walker {
+    position: absolute;
+    left: 0;
+    will-change: transform;
+    animation-timing-function: linear;
+    animation-iteration-count: infinite;
+}
+
+.p-wall__walker--ltr {
+    animation-name: p-wall-walker-ltr;
+}
+
+.p-wall__walker--rtl {
+    animation-name: p-wall-walker-rtl;
+}
+
+/* 由左走到右（出場後從另一側再進場，無縫循環） */
+@keyframes p-wall-walker-ltr {
+    from {
+        transform: translateX(-20cqw);
+    }
+    to {
+        transform: translateX(120cqw);
+    }
+}
+
+@keyframes p-wall-walker-rtl {
+    from {
+        transform: translateX(120cqw);
+    }
+    to {
+        transform: translateX(-20cqw);
+    }
+}
+
+/* 朝向層：依走動方向鏡像（靜態），不參與踏步動畫 */
+.p-wall__walker-face {
+    width: 100%;
+    transform-origin: 50% 100%;
+}
+
+/* 角色圖：踏步擺動（參考原本 monkey 的「定一格再快速翻面」傾擺＋微跳） */
+.p-wall__walker-sprite {
+    display: block;
+    width: 100%;
+    height: auto;
+    transform-origin: 50% 100%;
+    animation: p-wall-walker-step 0.5s linear infinite;
+    filter: drop-shadow(0 2px 4px rgba(0, 0, 0, 0.28));
+}
+
+@keyframes p-wall-walker-step {
+    0%,
+    24% {
+        transform: rotate(-4deg) translateY(0); /* 向左傾 */
+    }
+    25%,
+    49% {
+        transform: rotate(4deg) translateY(-7%); /* 向右傾、微跳 */
+    }
+    50%,
+    74% {
+        transform: rotate(-4deg) translateY(0);
+    }
+    75%,
+    100% {
+        transform: rotate(4deg) translateY(-7%);
+    }
+}
+
 /* 左側 12×12 paper.webp 格陣：略小於滿版高度、垂直置中、貼齊左側；格子之間不留縫隙 */
 .p-wall__grid {
     position: absolute;
