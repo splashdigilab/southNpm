@@ -15,6 +15,40 @@
     <button type="button" class="p-canvas-start__btn" @click="beginCanvasSession">開始</button>
   </div>
   <div v-show="isCanvasReady && hasUserStarted" class="p-wall">
+    <!-- 純綠底綠幕去背濾鏡：給 monkey.mp4 用（SVG filter 可隨 CSS 動畫/定位一起套用） -->
+    <svg class="p-wall__chroma-defs" aria-hidden="true" focusable="false">
+      <defs>
+        <filter id="monkey-chroma" color-interpolation-filters="sRGB">
+          <!-- 1. 綠度 = G − R − B：目標純綠 #00FF00 (0,255,0) = 1（最大），暖色/灰/黑 ≤0 -->
+          <feColorMatrix
+            type="matrix"
+            values="0 0 0 0 0
+                    0 0 0 0 0
+                    0 0 0 0 0
+                    -1 1 -1 0 0"
+            result="greenMask"
+          />
+          <!-- 2. 轉成遮罩：門檻只吃明顯偏綠的像素、邊緣帶羽化（slope 越大越銳利） -->
+          <feComponentTransfer in="greenMask" result="greenMaskSharp">
+            <feFuncA type="linear" slope="9" intercept="-0.1" />
+          </feComponentTransfer>
+          <!-- 3. 把遮罩往外擴一點，吃掉邊緣那一圈殘綠（radius 越大吃越多） -->
+          <feMorphology in="greenMaskSharp" operator="dilate" radius="1.5" result="greenMaskGrown" />
+          <!-- 4. 溢色抑制：把綠壓向 R/B（係數和=1 保持灰階中性），清掉殘綠 -->
+          <feColorMatrix
+            in="SourceGraphic"
+            type="matrix"
+            values="1    0    0    0 0
+                    0.25 0.5  0.25 0 0
+                    0    0    1    0 0
+                    0    0    0    1 0"
+            result="despilled"
+          />
+          <!-- 5. 用擴張後的遮罩從去溢色影像挖掉綠色背景 -->
+          <feComposite in="despilled" in2="greenMaskGrown" operator="out" />
+        </filter>
+      </defs>
+    </svg>
     <!-- 固定 445:250 比例的展示舞台，置中、不超出螢幕，外圍以黑色填滿 -->
     <div class="p-wall__stage">
       <!-- 背景影片：自動播放、循環、靜音；亮度由 JS 隨播放進度微調（前段不變、後段微亮） -->
@@ -42,7 +76,18 @@
         class="p-wall__intro p-wall__intro--transition"
         aria-hidden="true"
       >
-        <!-- TODO: 狀態二動畫 -->
+        <!-- 狀態二：subLogo 動畫飛入 → 其上方「正式開跑」四字依序逐一浮現（書法墨色） -->
+        <div class="p-wall__intro-banner">
+          <div class="p-wall__intro-slogan">
+            <span
+              v-for="(ch, i) in INTRO_SLOGAN"
+              :key="i"
+              class="p-wall__intro-slogan-char"
+              :style="{ animationDelay: 1.2 + i * 0.4 + 's' }"
+            >{{ ch }}</span>
+          </div>
+          <img src="/subLogo.svg" alt="" aria-hidden="true" class="p-wall__intro-logo" />
+        </div>
       </div>
 
       <!-- 開場狀態一/二：地上有幾隻角色來回走動（踏步擺動感參考原本的 monkey） -->
@@ -109,11 +154,14 @@
       <!-- idle 招呼：沒有字在右側聚光展示時，猴子走入畫面招呼觀眾；有字進來時走出畫面 -->
       <div v-if="showIdleOverlay" class="p-wall__reset-stage">
         <div class="p-wall__reset-group" :class="{ 'is-in': idleMonkeyIn }">
-          <img
-            src="/monkey.webp"
-            alt=""
-            aria-hidden="true"
+          <video
+            src="/monkey.mp4"
             class="p-wall__reset-monkey"
+            autoplay
+            loop
+            muted
+            playsinline
+            aria-hidden="true"
           />
           <Transition name="p-wall-reset-chat">
             <div v-if="idleChatIn" class="p-wall__reset-chat">
@@ -129,11 +177,14 @@
       <!-- 測試模式 reset：猴子走入畫面 → 對話框逐字顯示（猴子與對話框同一容器一起移動） -->
       <div v-if="showResetOverlay" class="p-wall__reset-stage">
         <div class="p-wall__reset-group" :class="{ 'is-in': monkeyIn }">
-          <img
-            src="/monkey.webp"
-            alt=""
-            aria-hidden="true"
+          <video
+            src="/monkey.mp4"
             class="p-wall__reset-monkey"
+            autoplay
+            loop
+            muted
+            playsinline
+            aria-hidden="true"
           />
           <Transition name="p-wall-reset-chat">
             <div v-if="chatIn" class="p-wall__reset-chat">
@@ -282,6 +333,8 @@ const route = useRoute()
 type IntroPhase = 'opening' | 'transition' | 'revealing' | 'done'
 const introMode = ref(false)
 const introPhase = ref<IntroPhase>('done')
+/** 狀態二標語：subLogo 飛入後，於其下方逐字浮現 */
+const INTRO_SLOGAN = ['正', '式', '開', '跑'] as const
 /** 只有在正常模式（或開場序列結束）才顯示格陣等正常內容 */
 const showNormalContent = computed(() => introPhase.value === 'done')
 
@@ -330,6 +383,9 @@ const introWalkersResolved = computed(() => {
 /** 地上走動的角色是否顯示。狀態一/二為 true；切到第三階段後仍保留，
  *  直到綠幕順向影片播完（蓋滿畫面的瞬間）才隱藏，避免角色突兀消失。 */
 const introWalkersVisible = ref(false)
+/** 開場第三階段（綠幕進稿紙）進行中：期間壓住招呼猴子，等綠幕反向露出稿紙後才放出，
+ *  讓猴子出場時機與 reset 結尾一致（而非在綠幕覆蓋／露出途中就走入）。 */
+let introRevealActive = false
 
 const gridRef = ref<HTMLElement | null>(null)
 const spotlightRef = ref<HTMLElement | null>(null)
@@ -444,6 +500,8 @@ function isDisplayingChar(): boolean {
 /** idle 猴子走入畫面招呼（僅在沒有字展示時） */
 function showIdleMonkey() {
   if (isDisplayingChar()) return
+  // 開場第三階段綠幕進稿紙期間先壓住，等綠幕露出稿紙後由 runIntroReveal 統一放出
+  if (introRevealActive) return
   // 已經在畫面中（走入完成）就不重來，避免重置 is-in 造成閃一下
   if (showIdleOverlay.value && idleMonkeyIn.value) return
   idleTimers.forEach(clearTimeout)
@@ -947,6 +1005,8 @@ function onIntroKeyDown(e: KeyboardEvent) {
 async function runIntroReveal() {
   if (introPhase.value !== 'transition') return
   introPhase.value = 'revealing'
+  // 綠幕進稿紙期間壓住招呼猴子，等反向露出稿紙後才放出（與 reset 結尾的猴子時機一致）
+  introRevealActive = true
   showResetVideo.value = true
   await nextTick()
   if (chromaReady) await chroma.playForward()
@@ -961,6 +1021,10 @@ async function runIntroReveal() {
 
   if (chromaReady) await chroma.playReverse()
   showResetVideo.value = false
+
+  // 綠幕反向露出稿紙後，才放出招呼猴子（沿用 reset 結尾的 updateIdleMonkey 時機）
+  introRevealActive = false
+  updateIdleMonkey()
 }
 
 /* ══════════════════════════════════════════════
