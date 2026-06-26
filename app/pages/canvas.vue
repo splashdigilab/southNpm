@@ -72,7 +72,7 @@
         <!-- TODO: 狀態一開場動畫 -->
       </div>
       <div
-        v-if="introMode && introPhase === 'transition'"
+        v-if="introBannerVisible"
         class="p-wall__intro p-wall__intro--transition"
         aria-hidden="true"
       >
@@ -114,6 +114,28 @@
               class="p-wall__walker-sprite"
               :style="{ animationDuration: w.step + 's' }"
             />
+          </div>
+        </div>
+      </div>
+
+      <!-- 開場狀態二：正式開跑標語播完後，主要角色（monkey 右側最大 / vegetable・monster 左側）依序搖晃進場 -->
+      <div v-if="introCastVisible" class="p-wall__intro-cast" aria-hidden="true">
+        <div
+          v-for="(c, i) in introCast"
+          :key="i"
+          class="p-wall__cast"
+          :class="c.from === 'right' ? 'p-wall__cast--from-right' : 'p-wall__cast--from-left'"
+          :style="{
+            left: c.left + '%',
+            bottom: c.bottom + '%',
+            width: c.width + 'cqw',
+            zIndex: c.zIndex,
+            animationDelay: c.delay + 's'
+          }"
+        >
+          <!-- 進場滑入由外層負責；搖晃（踏步傾擺）由內層 sprite 負責，與滑入分層避免 transform 互蓋 -->
+          <div class="p-wall__cast-face" :style="{ transform: c.flip ? 'scaleX(-1)' : 'scaleX(1)' }">
+            <img :src="c.src" alt="" aria-hidden="true" class="p-wall__cast-sprite" />
           </div>
         </div>
       </div>
@@ -191,7 +213,6 @@
               <img src="/chat.webp" alt="" aria-hidden="true" class="p-wall__reset-chat-bg" />
               <div class="p-wall__reset-chat-text">
                 <p class="p-wall__reset-chat-main">{{ typedMain }}</p>
-                <p class="p-wall__reset-chat-sub">{{ typedSub }}</p>
               </div>
             </div>
           </Transition>
@@ -237,7 +258,7 @@
 <script setup lang="ts">
 import { ref, reactive, computed, onMounted, onUnmounted, nextTick } from 'vue'
 import { useRoute } from 'vue-router'
-import { doc, getDoc, setDoc, onSnapshot, collection, getDocs, deleteDoc } from 'firebase/firestore'
+import { doc, getDoc, setDoc, onSnapshot, collection, getDocs, deleteDoc, query, orderBy, limit } from 'firebase/firestore'
 import StickyNote from '~/components/StickyNote.vue'
 import { useFirestore } from '~/composables/useFirestore'
 import { useChromaVideo } from '~/composables/useChromaVideo'
@@ -264,8 +285,8 @@ const SPOTLIGHT_HOLD_MS = 10000
 /** 測試版：只要前 TEST_CAPACITY 格都填滿，就進入 reset 流程。
  *  TEST_MODE／字數統一由 fonts.ts 控制（編輯器可選字池與此處同源）。 */
 const TEST_CAPACITY = TEST_FONT_COUNT
-/** 對話框文字打完後的停留時間 */
-const RESET_TEXT_HOLD_MS = 4000
+/** 對話框文字打完後的停留時間（原 4s，再多停 5s 才開始 reset） */
+const RESET_TEXT_HOLD_MS = 9000
 
 /* ─── Firestore ─── */
 const { $firestore } = useNuxtApp()
@@ -324,8 +345,9 @@ const hasUserStarted = ref(false)
  *   1. 一般模式：網址不帶參數 → 直接進入目前的正常展示（含「開始」按鈕）。
  *   2. 開場模式：網址帶 ?intro（如 /canvas?intro 或 ?intro=1）→ 先播開場序列。
  *      狀態流（以空白鍵推進）：
- *        opening    （空白鍵前）：只以最底下的背景影片呈現，格陣隱藏。狀態一動畫待設定。
- *        ─ 按空白鍵 ─→ transition：觸發狀態二動畫（待設定）。
+ *        opening    （第一次空白鍵前）：地上角色來回走動，僅以背景影片呈現，格陣隱藏。
+ *        ─ 按空白鍵 ─→ transition：雲（綠幕影片）順向蓋滿 → 地上角色消失 → 雲反向散去
+ *                        → 正式開跑標語動畫 → monkey/vegetable/monster 依序搖晃進場。
  *        ─ 按空白鍵 ─→ revealing ：播放目前 reset 的綠幕去背影片，蓋滿後切入正常模式。
  *        done       ：正常模式（與一般模式相同），開始監聽資料。
  */
@@ -335,6 +357,8 @@ const introMode = ref(false)
 const introPhase = ref<IntroPhase>('done')
 /** 狀態二標語：subLogo 飛入後，於其下方逐字浮現 */
 const INTRO_SLOGAN = ['正', '式', '開', '跑'] as const
+/** 開場序列動畫進行中（雲覆蓋／散去、標語播放等），期間忽略空白鍵避免插入。 */
+let introBusy = false
 /** 只有在正常模式（或開場序列結束）才顯示格陣等正常內容 */
 const showNormalContent = computed(() => introPhase.value === 'done')
 
@@ -383,6 +407,26 @@ const introWalkersResolved = computed(() => {
 /** 地上走動的角色是否顯示。狀態一/二為 true；切到第三階段後仍保留，
  *  直到綠幕順向影片播完（蓋滿畫面的瞬間）才隱藏，避免角色突兀消失。 */
 const introWalkersVisible = ref(false)
+/** 狀態二上方標語 + subLogo 是否顯示。進入 transition 時亮起，
+ *  保留到第三階段綠幕順向播完（雲蓋滿畫面）的瞬間才隱藏，避免在雲覆蓋途中就先消失。 */
+const introBannerVisible = ref(false)
+
+/**
+ * 「正式開跑」標語播完後依序搖晃進場的主要角色。
+ *   from   : 'left' = 由左側搖晃滑入、'right' = 由右側搖晃滑入
+ *   left   : 定位後距舞台左緣（%）        bottom : 距舞台底部（%，越小越靠下/前）
+ *   width  : 寬度（cqw，舞台寬度比例）     delay  : 進場起始延遲（秒，做出「依序」進場）
+ *   flip   : 是否水平鏡射原圖
+ * monkey.webp 在右側、最大隻；vegetable-1 / monster-1 在左側。
+ */
+const introCast = [
+  { src: '/monkey.webp',     from: 'right', left: 71, bottom: 26, width: 22, delay: 0,   flip: false, zIndex: 18 },
+  { src: '/vegetable-2.svg', from: 'left',  left: 15, bottom: 43, width: 12, delay: 0.7, flip: false, zIndex: 16 },
+  { src: '/monster-1.svg',   from: 'left',  left: 23, bottom: 23, width: 9.5, delay: 1.4, flip: false, zIndex: 17 }
+] as const
+/** 主要角色是否顯示（標語播完後亮起，進入正常模式的雲覆蓋時隱藏）。 */
+const introCastVisible = ref(false)
+
 /** 開場第三階段（綠幕進稿紙）進行中：期間壓住招呼猴子，等綠幕反向露出稿紙後才放出，
  *  讓猴子出場時機與 reset 結尾一致（而非在綠幕覆蓋／露出途中就走入）。 */
 let introRevealActive = false
@@ -433,8 +477,6 @@ const monkeyIn = ref(false)
 const chatIn = ref(false)
 /** 對話框主文字（逐字打出） */
 const typedMain = ref('')
-/** 對話框副文字（逐字打出） */
-const typedSub = ref('')
 /** 綠幕去背 canvas 是否顯示 */
 const showResetVideo = ref(false)
 /** 是否正在離場（觸發格內字的 CSS 離場動畫） */
@@ -444,8 +486,7 @@ let resetInProgress = false
 let resetTimers: ReturnType<typeof setTimeout>[] = []
 
 /* reset 對話文字內容（沿用原本的右側提示文字） */
-const RESET_MAIN_TEXT = '謝謝大家的參與'
-const RESET_SUB_TEXT = '稿紙即將更新！'
+const RESET_MAIN_TEXT = '恭喜完成屬於我們的共同創作！'
 
 /* ─── idle 招呼猴子 ─── */
 /** 沒有字在右側聚光展示時，猴子走入畫面的招呼台詞 */
@@ -581,6 +622,38 @@ async function markHistoryCleared(notes: Note[]) {
   )
 }
 
+/**
+ * 開場第二次空白鍵：在切入正常模式「之前」把目前畫布上的字全部清空，讓牆面以乾淨狀態露出。
+ * 沿用 reset 的「非破壞性」清空語意：不刪 queue_history，只把現有字標為已清除
+ *   - 加入 clearedTokens（localStorage）：applyHistory 初次載入時略過，牆面才會是空的
+ *     （注意：此過濾僅在 TEST_MODE 生效；正式 144 字版需改走真正刪除，見對話說明）
+ *   - 清掉 font_reservations、把這批字在 queue_history 標記 cleared，字帖釋放回可選池
+ * 必須在 startNormalMode() 之前 await 完成 clearedTokens 的填入，否則初次載入會先把舊字畫上去。
+ * 整段在綠幕（雲）蓋滿畫面期間執行，讀取延遲被雲遮住、不會閃現。
+ */
+async function clearBoardBeforeReveal() {
+  try {
+    const snap = await getDocs(
+      query(collection(db, 'queue_history'), orderBy('playedAt', 'desc'), limit(TOTAL_CELLS))
+    )
+    const notes = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Note)
+    if (!notes.length) return
+    for (const n of notes) {
+      const id = getId(n)
+      if (!id) continue
+      clearedTokens.add(id)
+      knownIds.add(id) // 一併標為已知，杜絕日後 fresh 路徑把它當新字重播聚光
+    }
+    persistClearedTokens()
+    // 字帖釋放回可選池 + DB 標記，與 reset 結尾一致（fire-and-forget）
+    void clearAllReservations()
+    void markHistoryCleared(notes)
+  } catch (e) {
+    // 失敗就保守退回原行為（露出既有的字），不擋住開場流程
+    console.warn('[wall] 開場清空畫布失敗，露出既有內容', e)
+  }
+}
+
 async function runResetSequence() {
   resetInProgress = true
   // 立刻廣播 reset 旗標：即使 live_grid 此刻仍滿，編輯器也應整段 reset 期間擋住進場
@@ -603,7 +676,6 @@ async function runResetSequence() {
 
   // 2. 對話框淡入：文字直接整段帶出（與 idle 招呼一致，不再逐字打字）
   typedMain.value = RESET_MAIN_TEXT
-  typedSub.value = RESET_SUB_TEXT
   chatIn.value = true
   await wait(CHAT_IN_MS)
   await wait(RESET_TEXT_HOLD_MS)
@@ -627,7 +699,6 @@ async function runResetSequence() {
   monkeyIn.value = false
   chatIn.value = false
   typedMain.value = ''
-  typedSub.value = ''
   resetting.value = false
   broadcastState()
   await nextTick()
@@ -988,10 +1059,11 @@ function onIntroKeyDown(e: KeyboardEvent) {
   if (!introMode.value) return
   if (e.code !== 'Space' && e.key !== ' ' && e.key !== 'Spacebar') return
   e.preventDefault()
+  // 序列動畫進行中（雲覆蓋／散去、標語播放）一律忽略按鍵，避免中途插入
+  if (introBusy) return
   if (introPhase.value === 'opening') {
-    // 狀態一 → 狀態二：觸發狀態二動畫（待設定）
-    introPhase.value = 'transition'
-    // TODO: 在此啟動狀態二開場動畫
+    // 狀態一 → 狀態二：雲蓋滿 → 地上角色消失 → 雲散去 → 正式開跑標語 → 主要角色搖晃進場
+    void runIntroTransition()
   } else if (introPhase.value === 'transition') {
     // 狀態二 → 播放目前 reset 的綠幕去背影片，結束後切入正常模式
     void runIntroReveal()
@@ -999,11 +1071,45 @@ function onIntroKeyDown(e: KeyboardEvent) {
 }
 
 /**
+ * 開場狀態一 → 狀態二（第一次空白鍵）：
+ *   1. 雲（綠幕去背影片）順向蓋滿畫面。
+ *   2. 順向播完的瞬間：地上來回走動的角色全部消失。
+ *   3. 雲反向散去，露出乾淨背景。
+ *   4. 雲散去後才開始「正式開跑」標語動畫（subLogo 飛入 + 四字逐字浮現）。
+ *   5. 標語播完後：monkey.webp（右側最大）、vegetable-1 / monster-1（左側）依序搖晃進場。
+ */
+async function runIntroTransition() {
+  if (introPhase.value !== 'opening' || introBusy) return
+  introBusy = true
+  introPhase.value = 'transition'
+
+  // 1. 雲順向蓋滿
+  showResetVideo.value = true
+  await nextTick()
+  if (chromaReady) await chroma.playForward()
+
+  // 2. 雲蓋滿的瞬間：地上角色消失
+  introWalkersVisible.value = false
+
+  // 3. 雲反向散去
+  if (chromaReady) await chroma.playReverse()
+  showResetVideo.value = false
+
+  // 4. 雲散去後：正式開跑標語動畫與主要角色進場同時開始
+  introBannerVisible.value = true
+  introCastVisible.value = true
+
+  // 角色開始進場後即解鎖：可再按空白鍵進入正常模式
+  introBusy = false
+}
+
+/**
  * 開場收尾：播放目前 reset 的綠幕去背影片（順向蓋滿 → 切入正常模式 → 反向露出）。
  * 綠幕蓋滿畫面的那一刻才啟動資料監聽，反向播放時牆面已是正常模式。
  */
 async function runIntroReveal() {
-  if (introPhase.value !== 'transition') return
+  if (introPhase.value !== 'transition' || introBusy) return
+  introBusy = true
   introPhase.value = 'revealing'
   // 綠幕進稿紙期間壓住招呼猴子，等反向露出稿紙後才放出（與 reset 結尾的猴子時機一致）
   introRevealActive = true
@@ -1011,8 +1117,14 @@ async function runIntroReveal() {
   await nextTick()
   if (chromaReady) await chroma.playForward()
 
-  // 綠幕順向播完（蓋滿畫面）的瞬間：地上角色才隱藏
+  // 綠幕順向播完（雲蓋滿畫面）的瞬間：地上角色、上方標語/subLogo、主要角色才隱藏
   introWalkersVisible.value = false
+  introBannerVisible.value = false
+  introCastVisible.value = false
+
+  // 第二次空白鍵：順便清空畫布。必須在 startNormalMode() 前完成，否則初次載入會先畫上舊字。
+  // 在雲蓋滿期間執行，讀取延遲被遮住、牆面以乾淨狀態露出。
+  await clearBoardBeforeReveal()
 
   // 綠幕蓋滿：切入正常模式並開始監聽資料
   introPhase.value = 'done'
@@ -1024,6 +1136,7 @@ async function runIntroReveal() {
 
   // 綠幕反向露出稿紙後，才放出招呼猴子（沿用 reset 結尾的 updateIdleMonkey 時機）
   introRevealActive = false
+  introBusy = false
   updateIdleMonkey()
 }
 

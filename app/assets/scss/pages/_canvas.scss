@@ -144,7 +144,7 @@
 .p-wall__intro-banner {
     position: absolute;
     left: 50%;
-    top: 14%;
+    top: 39%;
     transform: translateX(-50%);
     display: flex;
     flex-direction: column;
@@ -156,7 +156,7 @@
 /* subLogo：由上方略帶縮放飛入並落定（略放大、向右偏移） */
 .p-wall__intro-logo {
     display: block;
-    width: 34cqw;
+    width: 38cqw;
     height: auto;
     margin-left: 5cqw;
     transform-origin: 50% 50%;
@@ -184,7 +184,7 @@
 /* 每個字：由下方淡入上浮，delay 由 inline style 依序錯開（書法墨色 #241F20） */
 .p-wall__intro-slogan-char {
     display: inline-block;
-    font-size: 7cqw;
+    font-size: 7.8cqw;
     font-weight: 900;
     line-height: 1;
     color: #241f20;
@@ -281,6 +281,71 @@
     100% {
         transform: rotate(4deg) translateY(-7%);
     }
+}
+
+/* ─── 開場狀態二：正式開跑後，主要角色依序搖晃進場 ─── */
+.p-wall__intro-cast {
+    position: absolute;
+    inset: 0;
+    z-index: 13;
+    overflow: hidden;
+    pointer-events: none;
+}
+
+/* 角色外層：負責由畫面外搖晃滑入定位（left/bottom/width/delay 由 inline style 指定） */
+.p-wall__cast {
+    position: absolute;
+    opacity: 0;
+    will-change: transform, opacity;
+    animation-duration: 1.2s;
+    animation-timing-function: cubic-bezier(0.22, 0.85, 0.3, 1);
+    animation-iteration-count: 1;
+    animation-fill-mode: both;
+}
+
+.p-wall__cast--from-left {
+    animation-name: p-wall-cast-in-left;
+}
+
+.p-wall__cast--from-right {
+    animation-name: p-wall-cast-in-right;
+}
+
+@keyframes p-wall-cast-in-left {
+    from {
+        opacity: 0;
+        transform: translateX(-260%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+@keyframes p-wall-cast-in-right {
+    from {
+        opacity: 0;
+        transform: translateX(260%);
+    }
+    to {
+        opacity: 1;
+        transform: translateX(0);
+    }
+}
+
+/* 朝向層：可水平鏡射（靜態），不參與搖晃動畫 */
+.p-wall__cast-face {
+    width: 100%;
+    transform-origin: 50% 100%;
+}
+
+/* 角色圖：定位後靜止不搖晃（僅外層負責進場滑入） */
+.p-wall__cast-sprite {
+    display: block;
+    width: 100%;
+    height: auto;
+    transform-origin: 50% 100%;
+    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.3));
 }
 
 /* 左側 12×12 paper.webp 格陣：略小於滿版高度、垂直置中、貼齊左側；格子之間不留縫隙 */
@@ -483,9 +548,8 @@
     writing-mode: vertical-rl;
 }
 
-/* 台詞文字：統一一種字級樣式，字級為舞台寬度的固定比例（cqw） */
-.p-wall__reset-chat-main,
-.p-wall__reset-chat-sub {
+/* 台詞文字：字級為舞台寬度的固定比例（cqw） */
+.p-wall__reset-chat-main {
     margin: 0;
     font-size: 2cqw;
     font-weight: 800;
