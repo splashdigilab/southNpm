@@ -508,6 +508,17 @@ const WALL_CAPACITY = 144
  */
 const RESET_FLAG_MAX_AGE_MS = 60_000
 
+/**
+ * live_grid 的最大信任時效（毫秒）。
+ * 大螢幕在「正常模式」會持續心跳廣播刷新 updated_at（見 canvas.vue 的 broadcast 心跳），
+ * 故健康運行時 live_grid 一定很新。但 ?intro 開場序列在「按第二次空白鍵揭幕前」整段都不廣播，
+ * 此時 current_state.live_grid 是上一輪 session 的舊快照——若仍盲目信任，會把「實際在牆上的字」
+ * 當成可選（改字時挑到已上牆的字而覆蓋他人）、或把使用者手上的空字當成已用（誤跳改字）。
+ * 因此只有 updated_at 夠新時才信任 live_grid；過舊就退回讀權威來源 queue_history。
+ * 此值需明顯大於大螢幕心跳間隔，容許數次漏拍而不誤判。
+ */
+const LIVE_GRID_MAX_AGE_MS = 40_000
+
 const getUsedFonts = async (): Promise<Set<string>> => {
   const used = new Set<string>()
   const collectFonts = (docs: { data: () => any }[], skipCleared = false) => {
@@ -552,9 +563,13 @@ const getUsedFonts = async (): Promise<Set<string>> => {
       for (const id of ACTIVE_FONT_LIST) used.add(id)
       return used
     }
+    // 只有 updated_at 夠新時才信任 live_grid；過舊（多半是 ?intro 開場揭幕前不廣播、或大螢幕已關閉）
+    // 就視為不可用，退回讀權威來源 queue_history，避免拿上一輪 session 的舊快照誤判可選字。
+    const liveGridFresh =
+      Number.isFinite(updatedAt) && Date.now() - updatedAt < LIVE_GRID_MAX_AGE_MS
     const liveGrid = state?.live_grid ?? null
-    if (Array.isArray(liveGrid)) {
-      liveGridAvailable = true // 牆有廣播過（含空陣列＝牆上目前沒字）→ 視為權威，不需重讀 history
+    if (Array.isArray(liveGrid) && liveGridFresh) {
+      liveGridAvailable = true // 牆有廣播過且夠新（含空陣列＝牆上目前沒字）→ 視為權威，不需重讀 history
       for (const g of liveGrid) addFont(g?.style?.font)
     }
   } else {

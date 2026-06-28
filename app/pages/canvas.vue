@@ -394,7 +394,7 @@ type IntroPhase = 'opening' | 'transition' | 'revealing' | 'done'
 const introMode = ref(false)
 const introPhase = ref<IntroPhase>('done')
 /** 狀態二標語：subLogo 飛入後，於其下方逐字浮現 */
-const INTRO_SLOGAN = ['正', '式', '啟', '動'] as const
+const INTRO_SLOGAN = ['正', '式', '啓', '動'] as const
 /** 開場序列動畫進行中（雲覆蓋／散去、標語播放等），期間忽略空白鍵避免插入。 */
 let introBusy = false
 /** 只有在正常模式（或開場序列結束）才顯示格陣等正常內容 */
@@ -459,8 +459,8 @@ const introBannerVisible = ref(false)
  */
 const introCast = [
   { src: '/monkey.mp4',    from: 'right', left: 60, bottom: -4, width: 45,   delay: 0.7, flip: false, zIndex: 18 },
-  { src: '/vegetable.mp4', from: 'left',  left: 6,  bottom: 23, width: 25.5, delay: 0,   flip: false, zIndex: 16 },
-  { src: '/monster.mp4',   from: 'left',  left: 17, bottom: 1,  width: 21,   delay: 1.4, flip: false, zIndex: 17 }
+  { src: '/vegetable.mp4', from: 'left',  left: 6,  bottom: 17, width: 25.5, delay: 0,   flip: false, zIndex: 16 },
+  { src: '/monster.mp4',   from: 'left',  left: 22, bottom: 1,  width: 21,   delay: 1.4, flip: false, zIndex: 17 }
 ] as const
 /** 主要角色是否顯示（標語播完後亮起，進入正常模式的雲覆蓋時隱藏）。 */
 const introCastVisible = ref(false)
@@ -983,6 +983,15 @@ const showInterstitial = ref(false)
 const videoRef = ref<HTMLVideoElement | null>(null)
 let unsubCanvasVideo: (() => void) | null = null
 let interstitialArmTimer: ReturnType<typeof setInterval> | null = null
+/**
+ * 廣播心跳：正常模式期間每隔一段時間重新廣播一次 current_state，純粹刷新 updated_at。
+ * 牆面 broadcastState 只在「有變動」時觸發，長時間沒新字就不會更新 updated_at；
+ * 編輯器端只信任「夠新」的 live_grid（見 editor.vue LIVE_GRID_MAX_AGE_MS），
+ * 沒有心跳的話閒置一段時間後編輯器會誤判 live_grid 過舊而退回讀重量級 queue_history。
+ * 間隔需明顯小於編輯器的信任時效，確保正常運行時 live_grid 恆為新、走輕量路徑。
+ */
+const BROADCAST_HEARTBEAT_MS = 12_000
+let broadcastHeartbeatTimer: ReturnType<typeof setInterval> | null = null
 let lastPlayedSlotKey = ''
 const interstitialPreload = new Map<string, Promise<void>>()
 
@@ -1095,6 +1104,9 @@ const startNormalMode = () => {
       })
     }
   })
+
+  // 廣播心跳：定期重新廣播，刷新 current_state.updated_at，讓編輯器持續信任 live_grid（走輕量路徑）
+  broadcastHeartbeatTimer = setInterval(() => { broadcastState() }, BROADCAST_HEARTBEAT_MS)
 
   // 插播排程：每秒檢查，命中時段才播放（與 canvas 既有間隔規則一致）
   interstitialArmTimer = setInterval(() => {
@@ -1266,6 +1278,7 @@ onUnmounted(() => {
   unsubPending?.(); unsubPending = null
   unsubCanvasVideo?.(); unsubCanvasVideo = null
   if (interstitialArmTimer) { clearInterval(interstitialArmTimer); interstitialArmTimer = null }
+  if (broadcastHeartbeatTimer) { clearInterval(broadcastHeartbeatTimer); broadcastHeartbeatTimer = null }
   if (spotlightTimer) { clearTimeout(spotlightTimer); spotlightTimer = null }
   resetTimers.forEach(clearTimeout); resetTimers = []
   idleTimers.forEach(clearTimeout); idleTimers = []

@@ -8,6 +8,15 @@
   font-display: swap;
 }
 
+/* 開場標語「正式啓動」專用毛筆字體（已抽取 subset 為這四字） */
+@font-face {
+  font-family: 'KouzanGyousho';
+  src: url('/KouzanGyousho-subset.woff2') format('woff2');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 * {
   margin: 0;
   padding: 0;

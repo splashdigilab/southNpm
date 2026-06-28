@@ -156,7 +156,7 @@
 .p-wall__intro-banner {
     position: absolute;
     left: 50%;
-    top: 13%;
+    top: 6%;
     transform: translateX(-50%);
     display: flex;
     flex-direction: column;
@@ -196,7 +196,8 @@
 /* 每個字：由下方淡入上浮，delay 由 inline style 依序錯開（書法墨色 #241F20） */
 .p-wall__intro-slogan-char {
     display: inline-block;
-    font-size: 9.4cqw;
+    font-family: 'KouzanGyousho', 'JasonHandwriting2', serif;
+    font-size: 12.5cqw;
     font-weight: 900;
     line-height: 1;
     color: #241f20;

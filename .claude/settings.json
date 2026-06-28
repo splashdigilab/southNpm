@@ -48,7 +48,13 @@
       "Bash(ipconfig getifaddr *)",
       "Bash(echo \"exit: count=$\\(npx vue-tsc --noEmit -p tsconfig.json 2>&1)",
       "Bash(echo \"errors: $\\(npx vue-tsc --noEmit -p tsconfig.json 2>&1)",
-      "Bash(perl -i -pe 's/正式開跑/正式啟動/g' app/pages/canvas.vue)"
+      "Bash(perl -i -pe 's/正式開跑/正式啟動/g' app/pages/canvas.vue)",
+      "Bash(python3 -c \"import fontTools; print\\(fontTools.__version__\\)\")",
+      "Bash(python3 -m pip install --quiet fonttools brotli)",
+      "Bash(python3 -c \"import fontTools, brotli; print\\('fonttools', fontTools.version, 'brotli ok'\\)\")",
+      "Bash(python3 -m fontTools.subset public/KouzanGyoushoOTF.otf --text=\"正式啟動\" --output-file=public/KouzanGyousho-subset.woff2 --flavor=woff2 --layout-features='' --no-hinting --desubroutinize)",
+      "Bash(python3 -c ' *)",
+      "Bash(python3 -m fontTools.subset public/KouzanGyoushoOTF.otf --text=\"正式啓動\" --output-file=public/KouzanGyousho-subset.woff2 --flavor=woff2 --layout-features='' --no-hinting --desubroutinize)"
     ],
     "additionalDirectories": [
       "/Users/kevin/Documents/Github/southNpm/app/composables",
