@@ -132,6 +132,18 @@
     will-change: filter;
 }
 
+/* 文字背景：鋪滿舞台、疊在背景影片之上、其餘所有內容之下 */
+.p-wall__words-bg {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center top;
+    z-index: 1;
+    pointer-events: none;
+}
+
 /* 開場模式動畫容器（狀態一 / 狀態二）：鋪滿舞台、疊在背景影片之上，內容待設定 */
 .p-wall__intro {
     position: absolute;
@@ -361,12 +373,82 @@
     grid-template-columns: repeat(12, 1fr);
     grid-template-rows: repeat(12, 1fr);
     gap: 0;
+    z-index: 5; /* 稿紙疊在 wordsBg(1) 之上 */
 }
 
 /* 每個格子本身就是一張 paper.webp（空格也顯示，作為背板） */
 .p-wall__cell {
     position: relative;
     background: url('/paper.webp') center / 100% 100% no-repeat;
+}
+
+/* 洗淨星星：覆蓋稿紙格陣區域（與 .p-wall__grid 同範圍），疊在格陣之上 */
+.p-wall__clean-sparkles {
+    position: absolute;
+    left: 3%;
+    top: 50%;
+    transform: translateY(-50%);
+    transform-origin: center;
+    height: 92%;
+    aspect-ratio: 1 / 1;
+    z-index: 30; /* 在格陣(20)之上、reset 對話 stage(40)之下 */
+    pointer-events: none;
+    opacity: 1;
+    /* 收尾時整組淡出（縮小由每顆星星各自的 pulse 負責，往自己中心收） */
+    transition: opacity 0.6s ease;
+
+    &.is-leaving {
+        opacity: 0;
+
+        /* 離場時每顆星星各自往自己的中心縮到 0（取代循環 pulse，避免淡出時殘留大顆星星） */
+        .p-wall__clean-sparkle {
+            animation: clean-sparkle-out 0.6s cubic-bezier(0.45, 0, 0.2, 1) forwards;
+        }
+    }
+}
+
+/* 單顆星星：以中心定位，放大縮小 + 淡入淡出循環閃爍（洗乾淨感） */
+.p-wall__clean-sparkle {
+    position: absolute;
+    transform: translate(-50%, -50%) scale(0);
+    transform-origin: center;
+    opacity: 0;
+    /* 平滑的進出曲線；無限循環 */
+    animation: clean-sparkle 2s cubic-bezier(0.45, 0, 0.2, 1) infinite;
+    filter: drop-shadow(0 0 6px rgba(255, 244, 180, 0.9));
+    /* 提升為獨立 GPU 圖層：縮放時直接合成貼圖，避免每幀重繪 SVG + drop-shadow 造成卡頓 */
+    will-change: transform, opacity;
+    backface-visibility: hidden;
+}
+
+@keyframes clean-sparkle {
+    0% {
+        transform: translate(-50%, -50%) scale(0) translateZ(0);
+        opacity: 0;
+    }
+
+    45% {
+        transform: translate(-50%, -50%) scale(1.1) translateZ(0);
+        opacity: 1;
+    }
+
+    100% {
+        transform: translate(-50%, -50%) scale(0) translateZ(0);
+        opacity: 0;
+    }
+}
+
+/* 離場：每顆星星往自己的中心（transform-origin: center）縮到 0 並淡出 */
+@keyframes clean-sparkle-out {
+    0% {
+        transform: translate(-50%, -50%) scale(1) translateZ(0);
+        opacity: 1;
+    }
+
+    100% {
+        transform: translate(-50%, -50%) scale(0) translateZ(0);
+        opacity: 0;
+    }
 }
 
 /* 格內便利貼：略為內縮，落在紙面範圍內 */

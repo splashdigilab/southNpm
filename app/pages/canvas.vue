@@ -62,6 +62,13 @@
         playsinline
         aria-hidden="true"
       />
+      <!-- 文字背景：疊在背景影片之上、所有內容之下 -->
+      <img
+        src="/wordsBg.webp"
+        alt=""
+        aria-hidden="true"
+        class="p-wall__words-bg"
+      />
       <!-- 開場模式：狀態一 / 狀態二 動畫容器（內容待設定）。
            狀態一（空白鍵前）目前僅以最底下的背景影片呈現，格陣隱藏。 -->
       <div
@@ -159,6 +166,28 @@
             <StickyNote :note="noteAt(i - 1)" />
           </div>
         </div>
+      </div>
+
+      <!-- 洗淨星星：reset 露出乾淨稿紙時，幾顆星星在稿紙上放大縮小閃爍 -->
+      <div
+        v-if="cleanSparkleVisible"
+        class="p-wall__clean-sparkles"
+        :class="{ 'is-leaving': cleanSparkleLeaving }"
+        aria-hidden="true"
+      >
+        <img
+          v-for="s in CLEAN_SPARKLES"
+          :key="s.i"
+          src="/star.svg"
+          alt=""
+          class="p-wall__clean-sparkle"
+          :style="{
+            left: s.left + '%',
+            top: s.top + '%',
+            width: s.size + 'cqw',
+            animationDelay: s.delay + 's'
+          }"
+        />
       </div>
 
       <!-- 聚光區：新上傳的字先在畫面右側中段放大，10 秒後飛回左側自己的格子 -->
@@ -481,6 +510,21 @@ const typedMain = ref('')
 const showResetVideo = ref(false)
 /** 是否正在離場（觸發格內字的 CSS 離場動畫） */
 const resetting = ref(false)
+/** 露出乾淨稿紙時，幾顆星星在紙面上放大縮小閃爍（洗乾淨感） */
+const cleanSparkleVisible = ref(false)
+/** 星星收尾中：套上離場 class，順勢縮小淡出後才卸載（避免瞬間消失） */
+const cleanSparkleLeaving = ref(false)
+/** 洗淨星星位置：left/top 為稿紙區域內的百分比、size 為 cqw、delay 錯開閃爍 */
+const CLEAN_SPARKLES = [
+  { i: 0, left: 22, top: 26, size: 3.5, delay: 0 },
+  { i: 1, left: 64, top: 20, size: 3,   delay: 0.4 },
+  { i: 2, left: 42, top: 60, size: 4,   delay: 0.8 },
+  { i: 3, left: 74, top: 70, size: 3.2, delay: 0.25 }
+] as const
+/** 洗淨星星閃爍持續時間（露出乾淨稿紙後再閃一會兒才收掉） */
+const CLEAN_SPARKLE_HOLD_MS = 2200
+/** 星星離場（順勢縮小淡出）的時間，需與 _canvas.scss 的 transition 一致 */
+const CLEAN_SPARKLE_OUT_MS = 600
 /** reset 流程是否進行中（避免重複觸發） */
 let resetInProgress = false
 let resetTimers: ReturnType<typeof setTimeout>[] = []
@@ -703,9 +747,20 @@ async function runResetSequence() {
   broadcastState()
   await nextTick()
 
+  // 露出乾淨稿紙：幾顆星星在紙面上放大縮小閃爍（洗乾淨感）。
+  // 此時綠幕仍蓋著畫面，反向播放時雲散去、星星隨稿紙露出。
+  cleanSparkleVisible.value = true
+
   // 4. 綠幕去背影片反向播放，露出已清空的畫面
   if (chromaReady) await chroma.playReverse()
   showResetVideo.value = false
+
+  // 稿紙露出後星星再閃一會兒；收掉時順勢縮小淡出，避免瞬間消失
+  await wait(CLEAN_SPARKLE_HOLD_MS)
+  cleanSparkleLeaving.value = true
+  await wait(CLEAN_SPARKLE_OUT_MS)
+  cleanSparkleVisible.value = false
+  cleanSparkleLeaving.value = false
   } finally {
     // 不論中途是否出錯（含 chroma 播放例外），都務必解除 reset 狀態並再廣播一次清掉
     // wall_resetting 旗標。否則旗標會卡在 true，把所有編輯器永久擋在「準備新稿紙」而無法進場。
@@ -714,6 +769,8 @@ async function runResetSequence() {
     monkeyIn.value = false
     chatIn.value = false
     resetting.value = false
+    cleanSparkleVisible.value = false
+    cleanSparkleLeaving.value = false
     resetInProgress = false
     broadcastState()
   }
