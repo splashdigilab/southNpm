@@ -83,8 +83,9 @@
         class="p-wall__intro p-wall__intro--transition"
         aria-hidden="true"
       >
-        <!-- 狀態二：subLogo 動畫飛入 → 其上方「正式開跑」四字依序逐一浮現（書法墨色） -->
+        <!-- 狀態二：subLogo 動畫飛入 → 其下方「正式啟動」四字依序逐一浮現（書法墨色） -->
         <div class="p-wall__intro-banner">
+          <img src="/subLogo.svg" alt="" aria-hidden="true" class="p-wall__intro-logo" />
           <div class="p-wall__intro-slogan">
             <span
               v-for="(ch, i) in INTRO_SLOGAN"
@@ -93,7 +94,6 @@
               :style="{ animationDelay: 1.2 + i * 0.4 + 's' }"
             >{{ ch }}</span>
           </div>
-          <img src="/subLogo.svg" alt="" aria-hidden="true" class="p-wall__intro-logo" />
         </div>
       </div>
 
@@ -125,7 +125,7 @@
         </div>
       </div>
 
-      <!-- 開場狀態二：正式開跑標語播完後，主要角色（monkey 右側最大 / vegetable・monster 左側）依序搖晃進場 -->
+      <!-- 開場狀態二：正式啟動標語播完後，主要角色（monkey 右側最大 / vegetable・monster 左側）依序搖晃進場 -->
       <div v-if="introCastVisible" class="p-wall__intro-cast" aria-hidden="true">
         <div
           v-for="(c, i) in introCast"
@@ -141,8 +141,17 @@
           }"
         >
           <!-- 進場滑入由外層負責；搖晃（踏步傾擺）由內層 sprite 負責，與滑入分層避免 transform 互蓋 -->
+          <!-- 角色為純綠底 mp4，套 SVG 濾鏡 #monkey-chroma 綠幕去背 -->
           <div class="p-wall__cast-face" :style="{ transform: c.flip ? 'scaleX(-1)' : 'scaleX(1)' }">
-            <img :src="c.src" alt="" aria-hidden="true" class="p-wall__cast-sprite" />
+            <video
+              :src="c.src"
+              class="p-wall__cast-sprite"
+              autoplay
+              loop
+              muted
+              playsinline
+              aria-hidden="true"
+            />
           </div>
         </div>
       </div>
@@ -376,7 +385,7 @@ const hasUserStarted = ref(false)
  *      狀態流（以空白鍵推進）：
  *        opening    （第一次空白鍵前）：地上角色來回走動，僅以背景影片呈現，格陣隱藏。
  *        ─ 按空白鍵 ─→ transition：雲（綠幕影片）順向蓋滿 → 地上角色消失 → 雲反向散去
- *                        → 正式開跑標語動畫 → monkey/vegetable/monster 依序搖晃進場。
+ *                        → 正式啟動標語動畫 → monkey/vegetable/monster 依序搖晃進場。
  *        ─ 按空白鍵 ─→ revealing ：播放目前 reset 的綠幕去背影片，蓋滿後切入正常模式。
  *        done       ：正常模式（與一般模式相同），開始監聽資料。
  */
@@ -385,7 +394,7 @@ type IntroPhase = 'opening' | 'transition' | 'revealing' | 'done'
 const introMode = ref(false)
 const introPhase = ref<IntroPhase>('done')
 /** 狀態二標語：subLogo 飛入後，於其下方逐字浮現 */
-const INTRO_SLOGAN = ['正', '式', '開', '跑'] as const
+const INTRO_SLOGAN = ['正', '式', '啟', '動'] as const
 /** 開場序列動畫進行中（雲覆蓋／散去、標語播放等），期間忽略空白鍵避免插入。 */
 let introBusy = false
 /** 只有在正常模式（或開場序列結束）才顯示格陣等正常內容 */
@@ -441,17 +450,17 @@ const introWalkersVisible = ref(false)
 const introBannerVisible = ref(false)
 
 /**
- * 「正式開跑」標語播完後依序搖晃進場的主要角色。
+ * 「正式啟動」標語播完後依序搖晃進場的主要角色。
  *   from   : 'left' = 由左側搖晃滑入、'right' = 由右側搖晃滑入
  *   left   : 定位後距舞台左緣（%）        bottom : 距舞台底部（%，越小越靠下/前）
  *   width  : 寬度（cqw，舞台寬度比例）     delay  : 進場起始延遲（秒，做出「依序」進場）
  *   flip   : 是否水平鏡射原圖
- * monkey.webp 在右側、最大隻；vegetable-1 / monster-1 在左側。
+ * monkey.mp4 在右側、最大隻；vegetable.mp4 / monster.mp4 在左側（皆為純綠底 mp4，綠幕去背）。
  */
 const introCast = [
-  { src: '/monkey.webp',     from: 'right', left: 71, bottom: 26, width: 22, delay: 0,   flip: false, zIndex: 18 },
-  { src: '/vegetable-2.svg', from: 'left',  left: 15, bottom: 43, width: 12, delay: 0.7, flip: false, zIndex: 16 },
-  { src: '/monster-1.svg',   from: 'left',  left: 23, bottom: 23, width: 9.5, delay: 1.4, flip: false, zIndex: 17 }
+  { src: '/monkey.mp4',    from: 'right', left: 60, bottom: -4, width: 45,   delay: 0.7, flip: false, zIndex: 18 },
+  { src: '/vegetable.mp4', from: 'left',  left: 6,  bottom: 23, width: 25.5, delay: 0,   flip: false, zIndex: 16 },
+  { src: '/monster.mp4',   from: 'left',  left: 17, bottom: 1,  width: 21,   delay: 1.4, flip: false, zIndex: 17 }
 ] as const
 /** 主要角色是否顯示（標語播完後亮起，進入正常模式的雲覆蓋時隱藏）。 */
 const introCastVisible = ref(false)
@@ -1119,7 +1128,7 @@ function onIntroKeyDown(e: KeyboardEvent) {
   // 序列動畫進行中（雲覆蓋／散去、標語播放）一律忽略按鍵，避免中途插入
   if (introBusy) return
   if (introPhase.value === 'opening') {
-    // 狀態一 → 狀態二：雲蓋滿 → 地上角色消失 → 雲散去 → 正式開跑標語 → 主要角色搖晃進場
+    // 狀態一 → 狀態二：雲蓋滿 → 地上角色消失 → 雲散去 → 正式啟動標語 → 主要角色搖晃進場
     void runIntroTransition()
   } else if (introPhase.value === 'transition') {
     // 狀態二 → 播放目前 reset 的綠幕去背影片，結束後切入正常模式
@@ -1132,7 +1141,7 @@ function onIntroKeyDown(e: KeyboardEvent) {
  *   1. 雲（綠幕去背影片）順向蓋滿畫面。
  *   2. 順向播完的瞬間：地上來回走動的角色全部消失。
  *   3. 雲反向散去，露出乾淨背景。
- *   4. 雲散去後才開始「正式開跑」標語動畫（subLogo 飛入 + 四字逐字浮現）。
+ *   4. 雲散去後才開始「正式啟動」標語動畫（subLogo 飛入 + 四字逐字浮現）。
  *   5. 標語播完後：monkey.webp（右側最大）、vegetable-1 / monster-1（左側）依序搖晃進場。
  */
 async function runIntroTransition() {
@@ -1152,7 +1161,7 @@ async function runIntroTransition() {
   if (chromaReady) await chroma.playReverse()
   showResetVideo.value = false
 
-  // 4. 雲散去後：正式開跑標語動畫與主要角色進場同時開始
+  // 4. 雲散去後：正式啟動標語動畫與主要角色進場同時開始
   introBannerVisible.value = true
   introCastVisible.value = true
 

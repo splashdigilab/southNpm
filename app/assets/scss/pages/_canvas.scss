@@ -156,19 +156,19 @@
 .p-wall__intro-banner {
     position: absolute;
     left: 50%;
-    top: 39%;
+    top: 13%;
     transform: translateX(-50%);
     display: flex;
     flex-direction: column;
     align-items: center;
-    gap: 1cqw;
+    gap: 0.3cqw;
     z-index: 14;
 }
 
 /* subLogo：由上方略帶縮放飛入並落定（略放大、向右偏移） */
 .p-wall__intro-logo {
     display: block;
-    width: 38cqw;
+    width: 46cqw;
     height: auto;
     margin-left: 5cqw;
     transform-origin: 50% 50%;
@@ -196,7 +196,7 @@
 /* 每個字：由下方淡入上浮，delay 由 inline style 依序錯開（書法墨色 #241F20） */
 .p-wall__intro-slogan-char {
     display: inline-block;
-    font-size: 7.8cqw;
+    font-size: 9.4cqw;
     font-weight: 900;
     line-height: 1;
     color: #241f20;
@@ -351,13 +351,14 @@
     transform-origin: 50% 100%;
 }
 
-/* 角色圖：定位後靜止不搖晃（僅外層負責進場滑入） */
+/* 角色影片：定位後靜止不搖晃（僅外層負責進場滑入）。
+   純綠底 mp4，套 SVG 濾鏡 #monkey-chroma 綠幕去背（與 reset 猴子一致）。 */
 .p-wall__cast-sprite {
     display: block;
     width: 100%;
     height: auto;
     transform-origin: 50% 100%;
-    filter: drop-shadow(0 2px 6px rgba(0, 0, 0, 0.3));
+    filter: url('#monkey-chroma');
 }
 
 /* 左側 12×12 paper.webp 格陣：略小於滿版高度、垂直置中、貼齊左側；格子之間不留縫隙 */
