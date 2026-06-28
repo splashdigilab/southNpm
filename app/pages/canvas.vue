@@ -962,15 +962,31 @@ function broadcastState() {
     status: n.status ?? 'played',
     style: { font: n.style?.font ?? null }
   }))
+  // 開場序列（揭幕前）期間也視為「牆面準備中」：此時 live_grid 尚未反映揭幕後的真實牆況，
+  // 一律標記讓編輯器擋住進場、顯示「準備新稿紙」，而非讀到開場期間的空/舊牆況而撞字。
+  // 揭幕完成（introPhase === 'done'）後此值回到 resetInProgress，編輯器即解除。
+  const introPreparing = introMode.value && introPhase.value !== 'done'
   setDoc(doc(db, 'system', 'current_state'), {
     mode: live.length ? 'live' : 'idle',
     now_playing: null,
     live_grid,
     // reset 進行中（含清空格陣後到反向影片播完）一律標記，讓編輯器整段期間擋住進場，
     // 避免「live_grid 已清空但牆面尚未清乾淨」的尾段被當成有空位而進來送字。
-    wall_resetting: resetInProgress,
+    wall_resetting: resetInProgress || introPreparing,
     updated_at: Date.now()
   }).catch(e => console.error('[wall] broadcast', e))
+}
+
+/**
+ * 啟動廣播心跳（冪等）：定期重廣播刷新 current_state.updated_at。
+ * 牆面 broadcastState 只在「有變動」時觸發，長時間沒新字 updated_at 就會變舊；
+ * 編輯器只信任「夠新」的 current_state（見 editor.vue LIVE_GRID_MAX_AGE_MS），
+ * 否則會退回讀重量級 queue_history。心跳讓大螢幕只要活著就持續刷新，編輯器恆走輕量路徑。
+ * 開場模式於 onMounted 即啟動（期間廣播 wall_resetting=準備中），正常模式於 startNormalMode 啟動。
+ */
+function startBroadcastHeartbeat() {
+  if (broadcastHeartbeatTimer) return
+  broadcastHeartbeatTimer = setInterval(() => { broadcastState() }, BROADCAST_HEARTBEAT_MS)
 }
 
 /* ══════════════════════════════════════════════
@@ -1106,7 +1122,7 @@ const startNormalMode = () => {
   })
 
   // 廣播心跳：定期重新廣播，刷新 current_state.updated_at，讓編輯器持續信任 live_grid（走輕量路徑）
-  broadcastHeartbeatTimer = setInterval(() => { broadcastState() }, BROADCAST_HEARTBEAT_MS)
+  startBroadcastHeartbeat()
 
   // 插播排程：每秒檢查，命中時段才播放（與 canvas 既有間隔規則一致）
   interstitialArmTimer = setInterval(() => {
@@ -1234,6 +1250,11 @@ onMounted(async () => {
   if (introMode.value) {
     introPhase.value = 'opening'
     introWalkersVisible.value = true // 地上角色：開場即出現，直到綠幕順向播完才隱藏
+    // 開場揭幕前大螢幕本來整段不廣播，編輯器會讀到上一輪 session 的舊 current_state（或退回讀
+    // 重量級 queue_history 而卡載入）。這裡一掛載就先廣播一次「準備中」狀態並開啟心跳持續刷新，
+    // 讓編輯器讀到新鮮且正確的狀態（顯示準備新稿紙、走輕量路徑），不再卡載入也不會撞字。
+    broadcastState()
+    startBroadcastHeartbeat()
   }
   window.addEventListener('keydown', onIntroKeyDown)
 

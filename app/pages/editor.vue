@@ -456,8 +456,15 @@ const onStartClick = async () => {
   // 暫時隱藏手動選字 UI：按「開始」後直接從「還沒上牆的可選字」自動挑一個並佔用，
   // 成功才進入編輯器。（保留 openFontPicker / 字帖選擇 overlay 程式碼，方便日後再開啟手動選字）
   loading.value = true
-  const claimed = await autoSelectFont()
-  loading.value = false
+  let claimed: string | null = null
+  try {
+    claimed = await autoSelectFont()
+  } catch (e) {
+    // 自動選字若意外拋錯（網路/Firestore 例外），務必解除 loading，避免按鈕永久卡在載入中
+    console.error('[editor] 自動選字失敗', e)
+  } finally {
+    loading.value = false
+  }
   if (!claimed) {
     // 牆面當下全滿：失效已用字快取，讓使用者稍後（牆清空後）在同一頁再按開始時重讀最新牆況，
     // 否則會一直沿用這次讀到的「全滿」結果而永遠跳出此提醒。
