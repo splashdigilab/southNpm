@@ -722,17 +722,26 @@ const ensureFontBeforeSubmit = async (): Promise<'ok' | 'reselected' | 'unavaila
   // 最新「牆上已用字」與預約：打開送出 modal 時已先發動讀取，這裡多半直接取現成結果，不必再等網路。
   const [used, reserved] = await consumeSubmitFontState()
   const current = selectedFontId.value
-  // 原字沒在牆上、且還搶得回來 → 沿用，直接送
+  // 原字沒在牆上、且還搶得回來 → 沿用，直接送。
+  // 此判斷靠 atomic claimFont 把關：原字若被別人搶走會 claim 失敗而落到下方改字分支，
+  // 故即使 used 是 modal 打開時的快照、略為過時也不會誤判（current 不可能是別人剛上牆的字）。
   if (current && !used.has(current) && (await fontReservation.claimFont([current]))) return 'ok'
 
-  // 原字被佔走（或已出現在牆上）：改挑一個新字。排除牆上已用、別人預約、及本分頁剛交棒還沒上牆的字。
+  // 進入改字分支：原字保不住。此時 used/reserved 是 modal 打開當下的快照，若使用者在 modal 久停，
+  // 期間可能有別人送出的字 Y 已上牆、且 Y 的 handoff 預約已過 15s 過期——這種字不在過時的
+  // used/reserved 裡，claimFont([Y]) 會成功，導致改挑到「已在牆上」的字而覆蓋他人那一格。
+  // 因此改字前「強制重讀」最新牆況（live_grid + pending），用 fresh used 排除候選。
+  // 只有罕見的改字路徑多付一次讀取，happy path（'ok'）維持用快取、不增延遲。
+  invalidateUsedFontsCache()
+  const freshUsed = await getUsedFonts()
+  // 原字在重讀後其實已落在牆上（被別人搶先送出）→ 直接擋掉，避免再被當成可選的 current
   const handedOff = fontReservation.getRecentlyHandedOffFonts()
-  const exclude = new Set<string>([...used, ...reserved, ...handedOff])
+  const exclude = new Set<string>([...freshUsed, ...reserved, ...handedOff])
   const candidates = shuffle(ACTIVE_FONT_LIST.filter(id => !exclude.has(id)))
   let claimed = await fontReservation.claimFont(candidates)
-  // 後備同樣排除牆上的字＋剛交棒的字，絕不搶 canvas 上已有的字
+  // 後備同樣排除「牆上的字（fresh）」＋剛交棒的字，絕不搶 canvas 上已有的字
   if (!claimed) {
-    const retry = shuffle(ACTIVE_FONT_LIST.filter(id => !used.has(id) && !handedOff.has(id)))
+    const retry = shuffle(ACTIVE_FONT_LIST.filter(id => !freshUsed.has(id) && !handedOff.has(id)))
     claimed = await fontReservation.claimFont(retry)
   }
   if (!claimed) return 'unavailable'
