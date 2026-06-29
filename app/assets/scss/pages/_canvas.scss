@@ -387,7 +387,7 @@
     background: url('/paper.webp') center / 100% 100% no-repeat;
 }
 
-/* 洗淨星星：覆蓋稿紙格陣區域（與 .p-wall__grid 同範圍），疊在格陣之上 */
+/* 慶祝星星：覆蓋稿紙格陣區域（與 .p-wall__grid 同範圍），疊在格陣之上 */
 .p-wall__clean-sparkles {
     position: absolute;
     left: 3%;
@@ -396,23 +396,12 @@
     transform-origin: center;
     height: 92%;
     aspect-ratio: 1 / 1;
-    z-index: 30; /* 在格陣(20)之上、reset 對話 stage(40)之下 */
+    z-index: 30; /* 在格陣(20)之上、reset 對話 stage(40)之下；雲(90)滾入時會蓋過星星 */
     pointer-events: none;
     opacity: 1;
-    /* 收尾時整組淡出（縮小由每顆星星各自的 pulse 負責，往自己中心收） */
-    transition: opacity 0.6s ease;
-
-    &.is-leaving {
-        opacity: 0;
-
-        /* 離場時每顆星星各自往自己的中心縮到 0（取代循環 pulse，避免淡出時殘留大顆星星） */
-        .p-wall__clean-sparkle {
-            animation: clean-sparkle-out 0.6s cubic-bezier(0.45, 0, 0.2, 1) forwards;
-        }
-    }
 }
 
-/* 單顆星星：以中心定位，放大縮小 + 淡入淡出循環閃爍（洗乾淨感） */
+/* 單顆星星：以中心定位，放大縮小 + 淡入淡出循環閃爍（慶祝完成感） */
 .p-wall__clean-sparkle {
     position: absolute;
     transform: translate(-50%, -50%) scale(0);
@@ -434,19 +423,6 @@
 
     45% {
         transform: translate(-50%, -50%) scale(1.1) translateZ(0);
-        opacity: 1;
-    }
-
-    100% {
-        transform: translate(-50%, -50%) scale(0) translateZ(0);
-        opacity: 0;
-    }
-}
-
-/* 離場：每顆星星往自己的中心（transform-origin: center）縮到 0 並淡出 */
-@keyframes clean-sparkle-out {
-    0% {
-        transform: translate(-50%, -50%) scale(1) translateZ(0);
         opacity: 1;
     }
 
