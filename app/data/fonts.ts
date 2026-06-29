@@ -157,7 +157,7 @@ export type FontId = typeof FONT_LIST[number]
  * 若要回到測試模式（只開前 N 字、湊滿即 reset、停用上傳冷卻），把這個值改成較小的數字（例如 5）即可。
  */
 // export const TEST_FONT_COUNT = FONT_LIST.length
-export const TEST_FONT_COUNT = 5
+export const TEST_FONT_COUNT = 3
 export const ACTIVE_FONT_LIST = FONT_LIST.slice(0, TEST_FONT_COUNT)
 
 /**

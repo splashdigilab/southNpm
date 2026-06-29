@@ -55,7 +55,12 @@
       "Bash(python3 -m fontTools.subset public/KouzanGyoushoOTF.otf --text=\"正式啟動\" --output-file=public/KouzanGyousho-subset.woff2 --flavor=woff2 --layout-features='' --no-hinting --desubroutinize)",
       "Bash(python3 -c ' *)",
       "Bash(python3 -m fontTools.subset public/KouzanGyoushoOTF.otf --text=\"正式啓動\" --output-file=public/KouzanGyousho-subset.woff2 --flavor=woff2 --layout-features='' --no-hinting --desubroutinize)",
-      "Bash(grep -nE \"async function markHistoryCleared|async function clearAllReservations|async function clearBoardBeforeReveal|import \\\\{ doc, getDoc|deleteDoc\" app/pages/canvas.vue)"
+      "Bash(grep -nE \"async function markHistoryCleared|async function clearAllReservations|async function clearBoardBeforeReveal|import \\\\{ doc, getDoc|deleteDoc\" app/pages/canvas.vue)",
+      "Bash(awk '{print $5}')",
+      "Bash(qlmanage -t -s 800 -o /tmp /Users/kevin/Documents/Github/southNpm/public/vegetable-3.svg)",
+      "Bash(ls -la /tmp/vegetable-3.svg.png)",
+      "Bash(qlmanage -t -s 400 -o /tmp /Users/kevin/Documents/Github/southNpm/public/vegetable-1.svg)",
+      "Bash(qlmanage -t -s 400 -o /tmp /Users/kevin/Documents/Github/southNpm/public/vegetable-2.svg)"
     ],
     "additionalDirectories": [
       "/Users/kevin/Documents/Github/southNpm/app/composables",

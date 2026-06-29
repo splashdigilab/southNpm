@@ -580,6 +580,81 @@
     }
 }
 
+/* reset 時陪在猴子身邊的夥伴：vegetable 偏猴子右上、monster 偏猴子左上，兩隻都鏡射朝向猴子。
+   放在群組內 → 隨群組一起走入定位、一起上下漂浮；尺寸比猴子小、墊在前景。 */
+.p-wall__reset-pal {
+    position: absolute;
+    bottom: -6%;
+    height: auto;
+    z-index: 2; /* 疊在猴子之上，完整露出 */
+    transform-origin: 50% 100%;
+}
+
+/* vegetable：偏猴子右上，水平鏡射（scaleX 併入 keyframes 與搖擺/漂浮一起作用） */
+.p-wall__reset-pal--veg {
+    left: -6%;
+    bottom: 4%;
+    width: 32%;
+    transform: scaleX(-1);
+}
+
+/* monster：偏猴子左上，水平鏡射朝向猴子 */
+.p-wall__reset-pal--monster {
+    left: 44%;
+    bottom: 4%;
+    width: 30%;
+    transform: scaleX(-1);
+}
+
+/* 走入定位時：先搖擺出場（1.4s，與猴子同步），到位後接續上下漂浮。
+   兩段以「延遲 1.4s」串接、時間上不重疊 → 同一元素的兩個 transform 動畫不會打架。 */
+.p-wall__reset-group.is-in .p-wall__reset-pal {
+    animation:
+        p-wall-pal-walk-flip 1.4s linear 0s 1,
+        p-wall-pal-bob-flip 3.4s ease-in-out 1.4s infinite;
+}
+/* monster 漂浮節奏與 vegetable 錯開，做出前後景視差 */
+.p-wall__reset-group.is-in .p-wall__reset-pal--monster {
+    animation:
+        p-wall-pal-walk-flip 1.4s linear 0s 1,
+        p-wall-pal-bob-flip 3.8s ease-in-out 1.4s infinite;
+}
+
+/* 夥伴搖擺出場：與猴子 p-wall-monkey-walk 同節奏（定住一格再快速翻面），
+   但保留水平鏡射（故 scaleX 併入），到位（100%）才回正。 */
+@keyframes p-wall-pal-walk-flip {
+    0%,
+    24% {
+        transform: scaleX(-1) rotate(-3.5deg) translateY(0);
+    }
+    25%,
+    49% {
+        transform: scaleX(-1) rotate(3.5deg) translateY(-1.5%);
+    }
+    50%,
+    74% {
+        transform: scaleX(-1) rotate(-3.5deg) translateY(0);
+    }
+    75%,
+    99% {
+        transform: scaleX(-1) rotate(3.5deg) translateY(-1.5%);
+    }
+    100% {
+        transform: scaleX(-1) rotate(0deg) translateY(0);
+    }
+}
+
+/* 夥伴上下漂浮：保留水平鏡射（兩隻都朝向猴子），故 scaleX 併入 keyframes */
+@keyframes p-wall-pal-bob-flip {
+    0%,
+    100% {
+        transform: scaleX(-1) translateY(0);
+    }
+    50% {
+        transform: scaleX(-1) translateY(-4%);
+    }
+}
+
 /* 對話框：群組右上，尾巴朝左下指向猴子頭部（再往左下挪一些） */
 .p-wall__reset-chat {
     position: absolute;
