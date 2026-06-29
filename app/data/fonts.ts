@@ -153,11 +153,10 @@ export const FONT_LIST = [
 export type FontId = typeof FONT_LIST[number]
 
 /**
- * 測試模式：只開放前 N 個字（font-01 ~ font-05）。
- * 編輯器只會從 ACTIVE_FONT_LIST 選字／佔字，方便驗證「前五格填滿 → 顯示文字 → reset」的流程。
- * 要恢復正式 144 字版本時，把 TEST_FONT_COUNT 改回 FONT_LIST.length 即可。
+ * 開放字數：正式版為完整 144 字（= FONT_LIST.length），TEST_MODE 隨之關閉。
+ * 若要回到測試模式（只開前 N 字、湊滿即 reset、停用上傳冷卻），把這個值改成較小的數字（例如 5）即可。
  */
-export const TEST_FONT_COUNT = 5
+export const TEST_FONT_COUNT = FONT_LIST.length
 export const ACTIVE_FONT_LIST = FONT_LIST.slice(0, TEST_FONT_COUNT)
 
 /**

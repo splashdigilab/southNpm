@@ -54,7 +54,8 @@
       "Bash(python3 -c \"import fontTools, brotli; print\\('fonttools', fontTools.version, 'brotli ok'\\)\")",
       "Bash(python3 -m fontTools.subset public/KouzanGyoushoOTF.otf --text=\"正式啟動\" --output-file=public/KouzanGyousho-subset.woff2 --flavor=woff2 --layout-features='' --no-hinting --desubroutinize)",
       "Bash(python3 -c ' *)",
-      "Bash(python3 -m fontTools.subset public/KouzanGyoushoOTF.otf --text=\"正式啓動\" --output-file=public/KouzanGyousho-subset.woff2 --flavor=woff2 --layout-features='' --no-hinting --desubroutinize)"
+      "Bash(python3 -m fontTools.subset public/KouzanGyoushoOTF.otf --text=\"正式啓動\" --output-file=public/KouzanGyousho-subset.woff2 --flavor=woff2 --layout-features='' --no-hinting --desubroutinize)",
+      "Bash(grep -nE \"async function markHistoryCleared|async function clearAllReservations|async function clearBoardBeforeReveal|import \\\\{ doc, getDoc|deleteDoc\" app/pages/canvas.vue)"
     ],
     "additionalDirectories": [
       "/Users/kevin/Documents/Github/southNpm/app/composables",

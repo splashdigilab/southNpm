@@ -113,16 +113,19 @@
         class="p-wall__intro p-wall__intro--transition"
         aria-hidden="true"
       >
-        <!-- 狀態二：subLogo 動畫飛入 → 其下方「正式啟動」四字依序逐一浮現（書法墨色） -->
+        <!-- 狀態二：subLogo 動畫飛入 → 其下方 fontAnimation 四張 SVG 依序逐一浮現 -->
         <div class="p-wall__intro-banner">
           <img src="/subLogo.svg" alt="" aria-hidden="true" class="p-wall__intro-logo" />
           <div class="p-wall__intro-slogan">
-            <span
-              v-for="(ch, i) in INTRO_SLOGAN"
+            <img
+              v-for="(src, i) in INTRO_SLOGAN"
               :key="i"
+              :src="src"
+              alt=""
+              aria-hidden="true"
               class="p-wall__intro-slogan-char"
               :style="{ animationDelay: 1.2 + i * 0.4 + 's' }"
-            >{{ ch }}</span>
+            />
           </div>
         </div>
       </div>
@@ -424,8 +427,13 @@ const route = useRoute()
 type IntroPhase = 'opening' | 'transition' | 'revealing' | 'done'
 const introMode = ref(false)
 const introPhase = ref<IntroPhase>('done')
-/** 狀態二標語：subLogo 飛入後，於其下方逐字浮現 */
-const INTRO_SLOGAN = ['正', '式', '啓', '動'] as const
+/** 狀態二標語：subLogo 飛入後，於其下方逐張浮現（fontAnimation 四張 SVG） */
+const INTRO_SLOGAN = [
+  '/fontAnimation-1.svg',
+  '/fontAnimation-2.svg',
+  '/fontAnimation-3.svg',
+  '/fontAnimation-4.svg'
+] as const
 /** 開場序列動畫進行中（雲覆蓋／散去、標語播放等），期間忽略空白鍵避免插入。 */
 let introBusy = false
 /** 只有在正常模式（或開場序列結束）才顯示格陣等正常內容 */
@@ -606,9 +614,14 @@ function filledTestCount(): number {
   return c
 }
 
-/** 前 N 格填滿就觸發 reset 流程（測試模式專用） */
+/**
+ * 牆面填滿就觸發 reset 流程：
+ *   - 測試模式：湊滿前 TEST_CAPACITY（=開放字數）格即 reset，方便驗證流程。
+ *   - 正式版（144 字）：填滿全部 144 格＝千字文共創完成，播放 reset 動畫清空、釋放字帖讓大家重新書寫。
+ * 兩者同以 filledTestCount() >= TEST_CAPACITY 判斷（TEST_CAPACITY 等於目前開放字數）。
+ */
 function maybeTriggerReset() {
-  if (!TEST_MODE || resetInProgress) return
+  if (resetInProgress) return
   if (filledTestCount() >= TEST_CAPACITY) void runResetSequence()
 }
 
@@ -726,11 +739,12 @@ async function clearBoardBeforeReveal() {
     for (const n of notes) {
       const id = getId(n)
       if (!id) continue
-      clearedTokens.add(id)
       knownIds.add(id) // 一併標為已知，杜絕日後 fresh 路徑把它當新字重播聚光
+      if (TEST_MODE) clearedTokens.add(id)
     }
-    persistClearedTokens()
-    // 字帖釋放回可選池 + DB 標記，與 reset 結尾一致（fire-and-forget）
+    if (TEST_MODE) persistClearedTokens()
+    // 非破壞性清空：清掉預約鎖、把這批字在 queue_history 標記 cleared（不刪 DB，永久保留作品）。
+    // applyHistory 與編輯器後備都會略過 cleared 的字 → 牆面以乾淨狀態露出、字帖釋放回可選池。
     void clearAllReservations()
     void markHistoryCleared(notes)
   } catch (e) {
@@ -772,10 +786,14 @@ async function runResetSequence() {
 
   // 順向播完的同時：清空格陣（只清畫面，保留 knownIds）並移除對話 stage
   const clearedNotes: Note[] = []
-  for (const n of gridNotes) if (n) { clearedTokens.add(getId(n)); clearedNotes.push(n) }
-  if (spotlightNote.value) { clearedTokens.add(getId(spotlightNote.value)); clearedNotes.push(spotlightNote.value) }
-  persistClearedTokens()
-  // 字帖全部釋放回可選池：清掉預約鎖、並把這批字在 queue_history 標記為 cleared（不刪 DB）
+  for (const n of gridNotes) if (n) clearedNotes.push(n)
+  if (spotlightNote.value) clearedNotes.push(spotlightNote.value)
+  // 非破壞性清空：清掉預約鎖、把這批字在 queue_history 標記 cleared（不刪 DB，舊作品永久保留）。
+  // applyHistory 與編輯器後備都會略過 cleared 的字 → 牆面清空、144 字全部釋放回可選池可重新書寫。
+  if (TEST_MODE) {
+    for (const n of clearedNotes) clearedTokens.add(getId(n))
+    persistClearedTokens()
+  }
   void clearAllReservations()
   void markHistoryCleared(clearedNotes)
   for (let i = 0; i < gridNotes.length; i++) gridNotes[i] = null
@@ -836,9 +854,10 @@ function applyHistory(items: Note[]) {
       // 先標記為已知：同 font 的較舊重複字會被 continue 跳過，若不在此記錄就會被
       // 下一次快照當成「新字」排進聚光佇列重播（font-116、font-11 先跑的成因）
       knownIds.add(getId(it))
-      // 已 reset 過的字：標為已知但不上牆，避免重整後又填滿前 N 格再次觸發 reset
-      // （以 TEST_MODE 為閘，避免日後切回正式 144 字版時誤用 localStorage 殘留的標記）
-      if (TEST_MODE && clearedTokens.has(getId(it))) continue
+      // 已 reset 過的字：標為已知但不上牆，避免重整後又把舊字填回牆面、再次觸發 reset。
+      // 以資料庫 cleared 旗標為主（reset 時 markHistoryCleared 寫入，跨機器／重整皆有效，正式 144 字亦適用）；
+      // TEST_MODE 另用本機 clearedTokens 作為「cleared 尚未傳播前」的即時保險。
+      if ((it as QueueHistoryItem).cleared === true || (TEST_MODE && clearedTokens.has(getId(it)))) continue
       if (gridNotes[idx]) continue
       gridNotes[idx] = it
     }
@@ -857,8 +876,8 @@ function applyHistory(items: Note[]) {
   let queued = false
   for (const it of fresh) {
     knownIds.add(getId(it))
-    // 已 reset 過的字：標為已知後直接略過，不重播也不上牆
-    if (TEST_MODE && clearedTokens.has(getId(it))) continue
+    // 已 reset 過的字：標為已知後直接略過，不重播也不上牆（以資料庫 cleared 旗標為主，正式 144 字亦適用）
+    if ((it as QueueHistoryItem).cleared === true || (TEST_MODE && clearedTokens.has(getId(it)))) continue
     const ms = playedAtMs(it)
     // ms == null：剛寫入、serverTimestamp 尚未解析 → 真的剛上傳，播聚光
     // 近 SPOTLIGHT_RECENT_MS 內：真的新上傳，播聚光

@@ -187,20 +187,18 @@
     }
 }
 
-/* 標語列：四個字水平排列 */
+/* 標語列：四張 SVG 水平排列 */
 .p-wall__intro-slogan {
     display: flex;
+    align-items: flex-end;
     gap: 1.2cqw;
 }
 
-/* 每個字：由下方淡入上浮，delay 由 inline style 依序錯開（書法墨色 #241F20） */
+/* 每張 SVG：由下方淡入上浮，delay 由 inline style 依序錯開（fontAnimation 為方形 SVG） */
 .p-wall__intro-slogan-char {
-    display: inline-block;
-    font-family: 'KouzanGyousho', 'JasonHandwriting2', serif;
-    font-size: 12.5cqw;
-    font-weight: 900;
-    line-height: 1;
-    color: #241f20;
+    display: block;
+    width: 12.5cqw;
+    height: auto;
     opacity: 0;
     animation: p-wall-intro-char-in 0.8s cubic-bezier(0.2, 0.8, 0.3, 1.1) both;
 }
