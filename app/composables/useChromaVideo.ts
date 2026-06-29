@@ -175,24 +175,45 @@ export function useChromaVideo(opts: ChromaVideoOptions = {}) {
     raf = requestAnimationFrame(loop)
   }
 
-  /** 順向播放，邊播邊去背；影片 ended 時 resolve */
+  /**
+   * 順向播放，邊播邊去背；影片 ended 時 resolve。
+   *
+   * 關鍵：這個 Promise「必須保證會 settle」——只靠 'ended' 不夠。影片 decode 卡住、分頁被瀏覽器
+   * 節流、autoplay 被拒、codec 打嗝時，'ended' 可能永遠不觸發。若就此 hang，呼叫端（canvas 的
+   * reset / intro 流程）的 await 永遠回不來，resetInProgress / introPreparing 會卡在 true，
+   * 大螢幕便持續廣播 wall_resetting=true（12s 心跳一直刷新時間戳，讓編輯器那道 60s 失效保險也失效），
+   * 把所有編輯器永久鎖在「準備新稿紙 / 暫無可用字帖」。
+   * 因此 done() 設為冪等，並由「'ended' OR 'error' OR 看門狗逾時 OR play() 被拒」任一觸發收尾，
+   * 寧可動畫提早結束（視覺微瑕），也絕不讓整個 reset/intro 流程卡死。
+   */
   function playForward(): Promise<void> {
     return new Promise(resolve => {
       if (!ready || !video) { resolve(); return }
       const v = video
+      let settled = false
+      let watchdog = 0
       const done = () => {
+        if (settled) return
+        settled = true
+        clearTimeout(watchdog)
         v.removeEventListener('ended', done)
+        v.removeEventListener('error', done)
         cancelAnimationFrame(raf)
         drawFrame()
         resolve()
       }
       v.addEventListener('ended', done)
+      v.addEventListener('error', done) // 載入/解碼失敗時也要收尾，否則 'ended' 永遠不會來
       v.currentTime = 0
       v.playbackRate = 1
       v.muted = true
       cancelAnimationFrame(raf)
       loop()
-      void v.play().catch(() => { /* 靜音仍失敗就讓 timeupdate/ended 善後 */ })
+      // 看門狗：最久等「影片長度 + 3s 緩衝」；取不到 duration（metadata 未就緒）退回 12s。逾時即視同播完。
+      const cap = (isFinite(v.duration) && v.duration > 0 ? v.duration * 1000 : 12_000) + 3_000
+      watchdog = window.setTimeout(done, cap)
+      // play() 被拒（autoplay 政策等）時影片不會前進、'ended' 不會來 → 直接收尾，別等死。
+      void v.play().catch(() => done())
     })
   }
 
