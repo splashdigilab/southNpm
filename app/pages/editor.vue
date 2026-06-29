@@ -528,6 +528,9 @@ const LIVE_GRID_MAX_AGE_MS = 40_000
 
 const getUsedFonts = async (): Promise<Set<string>> => {
   const used = new Set<string>()
+  // [diag] 一次性診斷：記錄 used 的來源與 live_grid 新鮮度，用來釐清「選到牆上字」的真因。確認後可移除。
+  let diagSource: 'reset-all' | 'live_grid' | 'history-fallback' | 'none' = 'none'
+  let diagLiveGridAgeMs: number | null = null
   const collectFonts = (docs: { data: () => any }[], skipCleared = false) => {
     for (const d of docs) {
       const data = d.data()
@@ -568,6 +571,8 @@ const getUsedFonts = async (): Promise<Set<string>> => {
       Number.isFinite(updatedAt) && Date.now() - updatedAt < RESET_FLAG_MAX_AGE_MS
     if (state?.wall_resetting === true && resetFlagFresh) {
       for (const id of ACTIVE_FONT_LIST) used.add(id)
+      diagSource = 'reset-all'
+      console.log('[Editor][diag] getUsedFonts: wall_resetting=true → 全部視為已用', { ageMs: Date.now() - updatedAt })
       return used
     }
     // 只有 updated_at 夠新時才信任 live_grid；過舊（多半是 ?intro 開場揭幕前不廣播、或大螢幕已關閉）
@@ -577,6 +582,8 @@ const getUsedFonts = async (): Promise<Set<string>> => {
     const liveGrid = state?.live_grid ?? null
     if (Array.isArray(liveGrid) && liveGridFresh) {
       liveGridAvailable = true // 牆有廣播過且夠新（含空陣列＝牆上目前沒字）→ 視為權威，不需重讀 history
+      diagSource = 'live_grid'
+      diagLiveGridAgeMs = Date.now() - updatedAt
       for (const g of liveGrid) addFont(g?.style?.font)
     }
   } else {
@@ -586,6 +593,7 @@ const getUsedFonts = async (): Promise<Set<string>> => {
 
   // 第二段（後備）：只有 live_grid 不可用時，才付出 queue_history 的重量級讀取。
   if (!liveGridAvailable) {
+    diagSource = 'history-fallback'
     const historyQ = query(
       collection(db, 'queue_history'),
       orderBy('playedAt', 'desc'),
@@ -600,6 +608,8 @@ const getUsedFonts = async (): Promise<Set<string>> => {
   }
 
   if (!used.size) console.debug('[Editor] 各來源皆無已用字，描紅字帖改純隨機')
+  // [diag] 釐清「選到牆上字」用：來源（live_grid／後備 queue_history／reset-all）、live_grid 多舊、used 內容
+  console.log('[Editor][diag] getUsedFonts', { source: diagSource, liveGridAgeMs: diagLiveGridAgeMs, usedCount: used.size, usedFonts: [...used].sort() })
   return used
 }
 
@@ -698,6 +708,14 @@ const autoSelectFont = async (): Promise<string | null> => {
     const retry = shuffle(ACTIVE_FONT_LIST.filter(id => !used.has(id) && !handedOff.has(id)))
     claimed = await fontReservation.claimFont(retry)
   }
+  // [diag] 釐清「選到牆上字」用：claimed 是否誤落在 used 內（理論上不該為 true）、當下排除清單
+  console.log('[Editor][diag] autoSelect', {
+    claimed,
+    usedHasClaimed: claimed ? used.has(claimed) : null,
+    usedFonts: [...used].sort(),
+    reservedFonts: [...reserved].sort(),
+    handedOffFonts: [...handedOff].sort()
+  })
   return claimed
 }
 
