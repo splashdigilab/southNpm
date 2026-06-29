@@ -688,35 +688,56 @@ const refreshDisabledFonts = async (fresh = false) => {
  * 仍搶不到代表牆已滿、回傳 null。
  */
 const autoSelectFont = async (): Promise<string | null> => {
-  // 測試版只有 5 個字，必須嚴格避開「牆上已顯示」的字，否則描紅字帖會跟 canvas 重複。
+  // 測試版只開放少數幾個字，必須嚴格避開「牆上已顯示」的字，否則描紅字帖會跟 canvas 重複。
   // 進場決策一律「當下強制重讀」最新牆況：onMounted 的 prefetch 可能在 reset 開始前就快取，
   // 沿用會誤判（牆已滿卻當有空位／reset 中卻沒擋住）。故這裡丟掉快取改讀 fresh getUsedFonts()，
   // 確保 wall_resetting 與 live_grid 都是按下「開始」這一刻的真實狀態。
   invalidateUsedFontsCache()
-  const [used, reserved] = await Promise.all([
+  let [used, reserved] = await Promise.all([
     getUsedFonts(),
     fontReservation.getReservedFonts()
   ])
-  // 本分頁剛交棒、還沒在 live_grid 現身的字也要排除，否則「連續送字」會在過渡窗內又挑回它而撞字
-  const handedOff = fontReservation.getRecentlyHandedOffFonts()
-  const exclude = new Set<string>([...used, ...reserved, ...handedOff])
-  const candidates = shuffle(ACTIVE_FONT_LIST.filter(id => !exclude.has(id)))
-  let claimed = await fontReservation.claimFont(candidates)
-  // 後備：只排除「牆上正在顯示」的字(used)＋剛交棒的字，允許搶可能已過期釋放的別人預約；
-  // 但絕不去搶已經出現在 canvas 上、或自己剛送出的字，避免跟大螢幕重複。全在牆上 → 回傳 null。
-  if (!claimed) {
-    const retry = shuffle(ACTIVE_FONT_LIST.filter(id => !used.has(id) && !handedOff.has(id)))
-    claimed = await fontReservation.claimFont(retry)
+
+  // 經「最新牆況複查」確認其實已在牆上的字：佔到後若複查發現在牆上，釋放它並記在這裡，下一輪排除、改挑別的。
+  const provenOnWall = new Set<string>()
+
+  // 最多把可選字輪一遍：每輪都排除「已複查確認在牆上」的字，逐步收斂到一個確認可用的字。
+  for (let attempt = 0; attempt < ACTIVE_FONT_LIST.length; attempt++) {
+    // 本分頁剛交棒、還沒在 live_grid 現身的字也要排除，否則「連續送字」會在過渡窗內又挑回它而撞字
+    const handedOff = fontReservation.getRecentlyHandedOffFonts()
+    const exclude = new Set<string>([...used, ...reserved, ...handedOff, ...provenOnWall])
+    const candidates = shuffle(ACTIVE_FONT_LIST.filter(id => !exclude.has(id)))
+    let claimed = await fontReservation.claimFont(candidates)
+    // 後備：只排除「牆上正在顯示」的字(used)＋剛交棒＋已複查在牆上的字，允許搶可能已過期釋放的別人預約；
+    // 但絕不去搶已經出現在 canvas 上、或自己剛送出的字，避免跟大螢幕重複。全在牆上 → 回傳 null。
+    if (!claimed) {
+      const retry = shuffle(
+        ACTIVE_FONT_LIST.filter(id => !used.has(id) && !handedOff.has(id) && !provenOnWall.has(id))
+      )
+      claimed = await fontReservation.claimFont(retry)
+    }
+    if (!claimed) return null // 真的沒得選（牆滿／全被佔用）
+
+    // ── 最終把關：修正「按開始仍有機率被派到牆上已有的字」的殘留破口 ──
+    // used 只是「讀取那一刻」的快照，從讀 used 到 claimFont 完成之間有時間差；加上 live_grid 可能因牆面
+    // 漏拍／剛落格的廣播尚未送達而短暫不含某字（其預約又恰好過期），就會佔到一個其實已在牆上的字。
+    // 因此佔到後再用「當下最新牆況」複查一次：claimFont 花掉的時間通常已足夠讓牆面把該字廣播進 live_grid
+    //（live_grid 過時時 getUsedFonts 會退回讀權威來源 queue_history）。確認不在牆上才採用，否則釋放、排除、重挑。
+    invalidateUsedFontsCache()
+    const freshUsed = await getUsedFonts()
+    if (!freshUsed.has(claimed)) {
+      console.log('[Editor][diag] autoSelect 採用', { claimed, attempt })
+      return claimed
+    }
+
+    // 佔到的字經複查發現已在牆上 → 釋放預約、記入排除集，並用這份最新牆況繼續挑下一個。
+    provenOnWall.add(claimed)
+    await fontReservation.releaseFont()
+    used = freshUsed
+    console.warn('[Editor] 佔到的字經最新牆況複查發現已在牆上，釋放並重挑', { claimed, attempt })
   }
-  // [diag] 釐清「選到牆上字」用：claimed 是否誤落在 used 內（理論上不該為 true）、當下排除清單
-  console.log('[Editor][diag] autoSelect', {
-    claimed,
-    usedHasClaimed: claimed ? used.has(claimed) : null,
-    usedFonts: [...used].sort(),
-    reservedFonts: [...reserved].sort(),
-    handedOffFonts: [...handedOff].sort()
-  })
-  return claimed
+  // 可選字全試過、每個複查都落在牆上（極端情況）→ 不冒險帶著牆上字進場，回報無字可選。
+  return null
 }
 
 /** 按「開始」後打開字帖選擇：載入不可選清單並預設選第一個可選的字 */

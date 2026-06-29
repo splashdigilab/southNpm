@@ -60,11 +60,13 @@
       "Bash(qlmanage -t -s 800 -o /tmp /Users/kevin/Documents/Github/southNpm/public/vegetable-3.svg)",
       "Bash(ls -la /tmp/vegetable-3.svg.png)",
       "Bash(qlmanage -t -s 400 -o /tmp /Users/kevin/Documents/Github/southNpm/public/vegetable-1.svg)",
-      "Bash(qlmanage -t -s 400 -o /tmp /Users/kevin/Documents/Github/southNpm/public/vegetable-2.svg)"
+      "Bash(qlmanage -t -s 400 -o /tmp /Users/kevin/Documents/Github/southNpm/public/vegetable-2.svg)",
+      "Bash(df -h /tmp 2>&1 | tail -2; rm -rf /private/tmp/claude-501/*/tasks/*.output 2>/dev/null; echo \"cleaned\")"
     ],
     "additionalDirectories": [
       "/Users/kevin/Documents/Github/southNpm/app/composables",
-      "/Users/kevin/Documents/Github/southNpm/app/assets/scss/pages"
+      "/Users/kevin/Documents/Github/southNpm/app/assets/scss/pages",
+      "/private/tmp/claude-501/*/tasks"
     ]
   }
 }
