@@ -282,7 +282,7 @@
           <!-- 陪在猴子身邊的夥伴：vegetable 在猴子左下、monster 在猴子右下，
                隨群組一起走入並上下漂浮（monster 水平鏡射朝向猴子）。 -->
           <img
-            src="/vegetable-3.svg"
+            src="/vegetable-3.webp"
             alt=""
             aria-hidden="true"
             class="p-wall__reset-pal p-wall__reset-pal--veg"
