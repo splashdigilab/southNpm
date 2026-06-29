@@ -526,7 +526,16 @@ const RESET_FLAG_MAX_AGE_MS = 60_000
  */
 const LIVE_GRID_MAX_AGE_MS = 40_000
 
+/**
+ * 上一次 getUsedFonts 是否「可信」：是否成功取得任一權威牆況
+ *（reset 旗標／新鮮 live_grid／queue_history 後備）。三者都拿不到（弱網、高負載、大螢幕沒在廣播、
+ * 持久化快取因磁碟等問題失效）時，used 只會剩 pending 甚至空集合 —— autoSelectFont 不可拿它當
+ *「牆上沒這些字」的依據去選字，否則會選到牆上其實已經有的字（含較早寫、預約早已過期的字）。
+ */
+let lastWallReadAuthoritative = false
 const getUsedFonts = async (): Promise<Set<string>> => {
+  // 本次是否取得到權威牆況（讀到任一權威來源才設 true，最後寫回 lastWallReadAuthoritative）
+  let authoritative = false
   const used = new Set<string>()
   // [diag] 一次性診斷：記錄 used 的來源與 live_grid 新鮮度，用來釐清「選到牆上字」的真因。確認後可移除。
   let diagSource: 'reset-all' | 'live_grid' | 'history-fallback' | 'none' = 'none'
@@ -572,6 +581,7 @@ const getUsedFonts = async (): Promise<Set<string>> => {
     if (state?.wall_resetting === true && resetFlagFresh) {
       for (const id of ACTIVE_FONT_LIST) used.add(id)
       diagSource = 'reset-all'
+      lastWallReadAuthoritative = true // 確知大螢幕正在 reset → 這是權威判斷（擋住進場）
       console.log('[Editor][diag] getUsedFonts: wall_resetting=true → 全部視為已用', { ageMs: Date.now() - updatedAt })
       return used
     }
@@ -582,6 +592,7 @@ const getUsedFonts = async (): Promise<Set<string>> => {
     const liveGrid = state?.live_grid ?? null
     if (Array.isArray(liveGrid) && liveGridFresh) {
       liveGridAvailable = true // 牆有廣播過且夠新（含空陣列＝牆上目前沒字）→ 視為權威，不需重讀 history
+      authoritative = true
       diagSource = 'live_grid'
       diagLiveGridAgeMs = Date.now() - updatedAt
       for (const g of liveGrid) addFont(g?.style?.font)
@@ -602,14 +613,16 @@ const getUsedFonts = async (): Promise<Set<string>> => {
     try {
       const historySnap = await withTimeout(getDocs(historyQ))
       collectFonts(historySnap.docs, true)
+      authoritative = true // 成功讀到權威來源 queue_history（即使空的，也代表牆上目前沒字）
     } catch (e) {
       console.debug('[Editor] queue_history 後備讀取失敗', e)
     }
   }
 
+  lastWallReadAuthoritative = authoritative
   if (!used.size) console.debug('[Editor] 各來源皆無已用字，描紅字帖改純隨機')
-  // [diag] 釐清「選到牆上字」用：來源（live_grid／後備 queue_history／reset-all）、live_grid 多舊、used 內容
-  console.log('[Editor][diag] getUsedFonts', { source: diagSource, liveGridAgeMs: diagLiveGridAgeMs, usedCount: used.size, usedFonts: [...used].sort() })
+  // [diag] 釐清「選到牆上字」用：來源、是否權威、live_grid 多舊、used 內容
+  console.log('[Editor][diag] getUsedFonts', { source: diagSource, authoritative, liveGridAgeMs: diagLiveGridAgeMs, usedCount: used.size, usedFonts: [...used].sort() })
   return used
 }
 
@@ -697,6 +710,14 @@ const autoSelectFont = async (): Promise<string | null> => {
     getUsedFonts(),
     fontReservation.getReservedFonts()
   ])
+  // 失敗安全：連一個權威牆況都讀不到（弱網／高負載／大螢幕沒在廣播／持久化快取失效）時，
+  // used 可能殘缺甚至空集合。此時若照樣選字，極可能挑到牆上其實已有的字（含較早寫、預約早已過期的字）。
+  // 寧可回報「暫無可用」讓使用者稍後重試，也不要帶著沒把握的字進場 ——「連續上傳造成讀取逾時而撞到舊字」
+  // 主要就是被這道關卡擋下（onStartClick 接到 null 會顯示「正在準備新稿紙」）。
+  if (!lastWallReadAuthoritative) {
+    console.warn('[Editor] 進場讀取牆況不可靠，暫不選字以免撞到牆上已有的字')
+    return null
+  }
 
   // 經「最新牆況複查」確認其實已在牆上的字：佔到後若複查發現在牆上，釋放它並記在這裡，下一輪排除、改挑別的。
   const provenOnWall = new Set<string>()
@@ -725,6 +746,12 @@ const autoSelectFont = async (): Promise<string | null> => {
     //（live_grid 過時時 getUsedFonts 會退回讀權威來源 queue_history）。確認不在牆上才採用，否則釋放、排除、重挑。
     invalidateUsedFontsCache()
     const freshUsed = await getUsedFonts()
+    // 複查讀取不可靠時：初次讀取已是權威、且 claimed 不在其中（讀取到佔用之間的空窗極小）→ 沿用本次佔用，
+    // 不因偶發一次讀不到牆況就把使用者擋在外面。
+    if (!lastWallReadAuthoritative) {
+      console.warn('[Editor] 佔字後複查牆況不可靠，沿用初次權威讀取的結果', { claimed, attempt })
+      return claimed
+    }
     if (!freshUsed.has(claimed)) {
       console.log('[Editor][diag] autoSelect 採用', { claimed, attempt })
       return claimed
