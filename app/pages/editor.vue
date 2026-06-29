@@ -533,6 +533,11 @@ const LIVE_GRID_MAX_AGE_MS = 40_000
  *「牆上沒這些字」的依據去選字，否則會選到牆上其實已經有的字（含較早寫、預約早已過期的字）。
  */
 let lastWallReadAuthoritative = false
+/**
+ * 上一次 getUsedFonts 的資料來源。送出端據此判斷能否精準地「因撞牆而換字」：
+ * 只有 'live_grid'（大螢幕即時廣播）最準；'history-fallback' 看不到大螢幕本機的 clearedTokens，易誤判。
+ */
+let lastWallReadSource: 'reset-all' | 'live_grid' | 'history-fallback' | 'none' = 'none'
 const getUsedFonts = async (): Promise<Set<string>> => {
   // 本次是否取得到權威牆況（讀到任一權威來源才設 true，最後寫回 lastWallReadAuthoritative）
   let authoritative = false
@@ -582,6 +587,7 @@ const getUsedFonts = async (): Promise<Set<string>> => {
       for (const id of ACTIVE_FONT_LIST) used.add(id)
       diagSource = 'reset-all'
       lastWallReadAuthoritative = true // 確知大螢幕正在 reset → 這是權威判斷（擋住進場）
+      lastWallReadSource = 'reset-all'
       console.log('[Editor][diag] getUsedFonts: wall_resetting=true → 全部視為已用', { ageMs: Date.now() - updatedAt })
       return used
     }
@@ -620,6 +626,7 @@ const getUsedFonts = async (): Promise<Set<string>> => {
   }
 
   lastWallReadAuthoritative = authoritative
+  lastWallReadSource = diagSource
   if (!used.size) console.debug('[Editor] 各來源皆無已用字，描紅字帖改純隨機')
   // [diag] 釐清「選到牆上字」用：來源、是否權威、live_grid 多舊、used 內容
   console.log('[Editor][diag] getUsedFonts', { source: diagSource, authoritative, liveGridAgeMs: diagLiveGridAgeMs, usedCount: used.size, usedFonts: [...used].sort() })
@@ -828,13 +835,20 @@ const ensureFontBeforeSubmit = async (): Promise<'ok' | 'reselected' | 'unavaila
   // 若自己的預約曾因閒置過期被釋放、別人在這段空檔把同字送上牆後又讓預約過期，
   // 這裡仍可能重新 claim 成功。故不能據此就放行，必須再以最新牆況確認（見下）。
   if (current && (await fontReservation.claimFont([current]))) {
-    // 握得住預約 → 一律以「最新牆況」確認原字沒在牆上才直接送。
-    // 不可信任 modal 打開當下凍結的 used 快照：最危險的情境正是「快照之後別人才把同字送上牆」——
-    // 自己的預約因閒置過期被釋放 → 別人搶到同字並送出上牆 → 其交棒寬限也過 → 此時 claimFont([current])
-    // 會再次成功（已無有效預約），但舊快照必定不含該字。若還走 `!used.has(current)` 的捷徑就會誤放行，
-    // 把同一個字重複送上牆（佔兩格）。故改成只信任 readFreshUsed() 的即時讀取（僅多一次牆況讀取）。
-    if (!(await readFreshUsed()).has(current)) return 'ok'
-    // 原字確實已在牆上（其預約已被交棒過期釋放）→ 不能覆蓋該格，往下改字
+    // 握得住預約 → 以「最新牆況」確認原字沒在牆上才直接送。但「在不在牆上」只信任最準的來源：
+    const freshUsed = await readFreshUsed()
+    if (lastWallReadSource === 'reset-all') {
+      // 大螢幕正在重置：不在這裡硬送，往下走（改字分支會因全部標記為 used 回 'unavailable'，請使用者稍候）。
+    } else if (lastWallReadSource === 'live_grid' && freshUsed.has(current)) {
+      // 由最準的 live_grid 確認原字確實已在牆上（多半是自己的預約曾閒置過期被別人搶送上牆又釋放）→ 往下改字。
+    } else {
+      // 其餘情況一律信任手上的預約鎖、直接送，不誤判換字：
+      //  - live_grid 確認原字不在牆上 → 本來就該送。
+      //  - 來源是 queue_history 後備或讀取不可靠 → 它看不到大螢幕本機的 clearedTokens，會把「畫面已清掉但
+      //    cleared 旗標沒寫成功」的舊字誤當成還在牆上，據此換字就是「畫面明明沒這字卻說撞 canvas」的誤判
+      //   （弱網／磁碟滿時特別明顯）。既然還握著預約鎖，直接送最安全。
+      return 'ok'
+    }
   }
 
   // 改字分支：原字保不住、或原字確實已在牆上。用最新牆況排除候選，
@@ -1476,8 +1490,11 @@ const confirmSubmit = async () => {
     const fontResult = await ensureFontBeforeSubmit()
     if (fontResult === 'reselected') {
       showSubmitModal.value = false
+      // 換了新字帖：原本的描紅/貼紙是描在「舊字」上的，已不適用 → 清空畫布，讓使用者依新字重描。
+      resetEditorToInitial()
+      activeTab.value = 'draw'
       showAlert(
-        '你描的這個字剛剛被別人搶先用了，已幫你換上一張新的字帖。<br>請依畫面上新的描紅重新描寫後，再按一次送出喔！',
+        '你描的這個字剛好已經出現在大螢幕上了，已幫你換上一張新的字帖。<br>畫面已清空，請依新的描紅重新描寫後，再按一次送出喔！',
         '字帖已更換',
         '✍️'
       )
