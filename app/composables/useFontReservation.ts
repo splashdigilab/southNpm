@@ -32,13 +32,19 @@ const RESERVATION_TTL_MS = 1 * 60_000
 const HEARTBEAT_MS = 0.5 * 60_000
 /**
  * 送出後「交棒給牆面」的寬限期（毫秒）。
- * 送出成功時不立即刪預約，要撐過「字已從 queue_pending 移除、但牆面 live_grid 廣播尚未含它」的空窗；
- * 但這個空窗極短——牆面的 broadcastState 一旦把字納入 live_grid（含聚光中／排隊中的字）就會持續覆蓋它，
- * 之後預約即多餘。故交棒後只保留這段短寬限期，而非沿用整整 1 分鐘的 idle TTL，
- * 否則字早已安全上牆卻仍被預約鎖住，最久達 1 分鐘無法再被選到。
- * 測試模式只有 3 個字時尤其明顯：剛送出的字會卡住整池，導致牆上還有空位卻顯示「暫無可用的字」。
+ * 送出成功時不立即刪預約，要撐過「字已從 queue_pending 移除、但牆面 live_grid 廣播尚未含它」的空窗。
+ *
+ * 為何是 40 秒（須涵蓋整個空窗，不能更短）：
+ * 這段空窗 = moveToHistory 刪掉 pending → 寫入 history → 牆面 history onSnapshot 回來 → applyHistory
+ * 推進 spotQueue 並 broadcastState 把字納入 live_grid。健康時只要幾秒，但牆機壅塞時 history 快照投遞
+ * 可能拖到十幾秒以上。而編輯器只要牆面心跳讓 current_state「夠新」（editor.vue LIVE_GRID_MAX_AGE_MS = 40s）
+ * 就會信任 live_grid、不退回讀 queue_history；若寬限期短於這個信任窗，就會出現
+ * 「pending 已刪、live_grid 還沒有、預約也過期」的真空 → 別人選到同字、撞到同一格。
+ * 故寬限期對齊 LIVE_GRID_MAX_AGE_MS（40s），確保整段「編輯器信任 live_grid 卻可能還沒含此字」的期間
+ * 都有預約鎖住此字。代價：字真正上牆後（已被 live_grid 涵蓋）預約仍多鎖一會兒，但被鎖的字本就即將上牆、
+ * 本就該排除，無副作用；唯一例外是 moveToHistory 永久失敗（字始終沒上牆），此時最久多鎖到 40s 後由 TTL 釋放。
  */
-const HANDOFF_GRACE_MS = 15_000
+const HANDOFF_GRACE_MS = 40_000
 
 const RESERVATION_COL = 'font_reservations'
 

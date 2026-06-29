@@ -47,6 +47,36 @@
           <!-- 5. 用擴張後的遮罩從去溢色影像挖掉綠色背景 -->
           <feComposite in="despilled" in2="greenMaskGrown" operator="out" />
         </filter>
+        <!-- 純藍底藍幕去背濾鏡：給 vegetable.mp4 用（底圖為純藍 #0000FF (0,0,255)） -->
+        <filter id="vegetable-chroma" color-interpolation-filters="sRGB">
+          <!-- 1. 藍度 = B − R − G：目標純藍 #0000FF (0,0,255) = 1（最大），暖色/灰/黑 ≤0 -->
+          <feColorMatrix
+            type="matrix"
+            values="0 0 0 0 0
+                    0 0 0 0 0
+                    0 0 0 0 0
+                    -1 -1 1 0 0"
+            result="blueMask"
+          />
+          <!-- 2. 轉成遮罩：門檻只吃明顯偏藍的像素、邊緣帶羽化（slope 越大越銳利） -->
+          <feComponentTransfer in="blueMask" result="blueMaskSharp">
+            <feFuncA type="linear" slope="9" intercept="-0.1" />
+          </feComponentTransfer>
+          <!-- 3. 把遮罩往外擴一點，吃掉邊緣那一圈殘藍（radius 越大吃越多） -->
+          <feMorphology in="blueMaskSharp" operator="dilate" radius="1.5" result="blueMaskGrown" />
+          <!-- 4. 溢色抑制：把藍壓向 R/G（係數和=1 保持灰階中性），清掉殘藍 -->
+          <feColorMatrix
+            in="SourceGraphic"
+            type="matrix"
+            values="1    0    0    0 0
+                    0    1    0    0 0
+                    0.25 0.25 0.5  0 0
+                    0    0    0    1 0"
+            result="despilled"
+          />
+          <!-- 5. 用擴張後的遮罩從去溢色影像挖掉藍色背景 -->
+          <feComposite in="despilled" in2="blueMaskGrown" operator="out" />
+        </filter>
       </defs>
     </svg>
     <!-- 固定 445:250 比例的展示舞台，置中、不超出螢幕，外圍以黑色填滿 -->
@@ -141,11 +171,12 @@
           }"
         >
           <!-- 進場滑入由外層負責；搖晃（踏步傾擺）由內層 sprite 負責，與滑入分層避免 transform 互蓋 -->
-          <!-- 角色為純綠底 mp4，套 SVG 濾鏡 #monkey-chroma 綠幕去背 -->
+          <!-- 角色為純色底 mp4，依 chroma 套對應 SVG 濾鏡去背：綠底 #monkey-chroma、藍底 #vegetable-chroma -->
           <div class="p-wall__cast-face" :style="{ transform: c.flip ? 'scaleX(-1)' : 'scaleX(1)' }">
             <video
               :src="c.src"
               class="p-wall__cast-sprite"
+              :class="c.chroma === 'blue' ? 'p-wall__cast-sprite--blue' : null"
               autoplay
               loop
               muted
@@ -455,12 +486,13 @@ const introBannerVisible = ref(false)
  *   left   : 定位後距舞台左緣（%）        bottom : 距舞台底部（%，越小越靠下/前）
  *   width  : 寬度（cqw，舞台寬度比例）     delay  : 進場起始延遲（秒，做出「依序」進場）
  *   flip   : 是否水平鏡射原圖
- * monkey.mp4 在右側、最大隻；vegetable.mp4 / monster.mp4 在左側（皆為純綠底 mp4，綠幕去背）。
+ * monkey.mp4 在右側、最大隻；vegetable.mp4 / monster.mp4 在左側。
+ *   chroma : 去背鍵色 'green'＝純綠底（#monkey-chroma）、'blue'＝純藍底 #0000FF（#vegetable-chroma）。
  */
 const introCast = [
-  { src: '/monkey.mp4',    from: 'right', left: 60, bottom: -4, width: 45,   delay: 0.7, flip: false, zIndex: 18 },
-  { src: '/vegetable.mp4', from: 'left',  left: 6,  bottom: 17, width: 25.5, delay: 0,   flip: false, zIndex: 16 },
-  { src: '/monster.mp4',   from: 'left',  left: 22, bottom: 1,  width: 21,   delay: 1.4, flip: false, zIndex: 17 }
+  { src: '/monkey.mp4',    from: 'right', left: 60, bottom: -4, width: 45,   delay: 0.7, flip: false, zIndex: 18, chroma: 'green' },
+  { src: '/vegetable.mp4', from: 'left',  left: 6,  bottom: 17, width: 25.5, delay: 0,   flip: false, zIndex: 16, chroma: 'blue'  },
+  { src: '/monster.mp4',   from: 'left',  left: 22, bottom: 1,  width: 21,   delay: 1.4, flip: false, zIndex: 17, chroma: 'green' }
 ] as const
 /** 主要角色是否顯示（標語播完後亮起，進入正常模式的雲覆蓋時隱藏）。 */
 const introCastVisible = ref(false)

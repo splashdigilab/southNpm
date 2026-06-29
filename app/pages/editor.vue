@@ -741,8 +741,11 @@ const confirmFontSelection = async () => {
  *   'unavailable'→ 連新字都搶不到（牆滿／reset 中），呼叫端中止並提示稍候。
  */
 const ensureFontBeforeSubmit = async (): Promise<'ok' | 'reselected' | 'unavailable'> => {
-  // 最新「牆上已用字」與預約：打開送出 modal 時已先發動讀取，這裡多半直接取現成結果，不必再等網路。
-  const [used, reserved] = await consumeSubmitFontState()
+  // 別人的預約：打開送出 modal 時已先發動讀取，這裡多半直接取現成結果，不必再等網路。
+  // 注意：不取用一起預讀的「牆上已用字（used）」快照——它是 modal 打開當下的凍結值，
+  // 送出前「原字是否已在牆上」一律改以 readFreshUsed() 的最新牆況判斷（見下方說明），
+  // 避免用過時快照誤放行而把同字重複上牆。
+  const [, reserved] = await consumeSubmitFontState()
   const current = selectedFontId.value
 
   // 重讀最新牆況（live_grid + pending）只在需要時做一次並快取，避免重複讀取
@@ -755,12 +758,15 @@ const ensureFontBeforeSubmit = async (): Promise<'ok' | 'reselected' | 'unavaila
     return freshUsedCache
   }
 
-  // 先確認還握得住原字（atomic claim）。握得住＝同字一鎖仍在自己手上，沒有別人能把它送上牆，
-  // 因此「used 含原字」必定是過時快照的誤報（例如 modal 打開當下牆在 reset，used 被當成全滿）。
+  // 先確認還握得住原字（atomic claim）。注意：握得住預約「不」等於原字不在牆上——
+  // 若自己的預約曾因閒置過期被釋放、別人在這段空檔把同字送上牆後又讓預約過期，
+  // 這裡仍可能重新 claim 成功。故不能據此就放行，必須再以最新牆況確認（見下）。
   if (current && (await fontReservation.claimFont([current]))) {
-    // 快取顯示原字沒在牆上 → 直接送（最常見、零額外讀取）
-    if (!used.has(current)) return 'ok'
-    // 快取顯示在牆上、但其實還握著預約 → 重讀最新牆況確認，避免被過時快照誤判而亂跳「字帖已更換」
+    // 握得住預約 → 一律以「最新牆況」確認原字沒在牆上才直接送。
+    // 不可信任 modal 打開當下凍結的 used 快照：最危險的情境正是「快照之後別人才把同字送上牆」——
+    // 自己的預約因閒置過期被釋放 → 別人搶到同字並送出上牆 → 其交棒寬限也過 → 此時 claimFont([current])
+    // 會再次成功（已無有效預約），但舊快照必定不含該字。若還走 `!used.has(current)` 的捷徑就會誤放行，
+    // 把同一個字重複送上牆（佔兩格）。故改成只信任 readFreshUsed() 的即時讀取（僅多一次牆況讀取）。
     if (!(await readFreshUsed()).has(current)) return 'ok'
     // 原字確實已在牆上（其預約已被交棒過期釋放）→ 不能覆蓋該格，往下改字
   }

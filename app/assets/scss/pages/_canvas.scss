@@ -362,6 +362,11 @@
     filter: url('#monkey-chroma');
 }
 
+/* vegetable.mp4 為純藍底 #0000FF (0,0,255)，改套藍幕去背濾鏡 */
+.p-wall__cast-sprite--blue {
+    filter: url('#vegetable-chroma');
+}
+
 /* 左側 12×12 paper.webp 格陣：略小於滿版高度、垂直置中、貼齊左側；格子之間不留縫隙 */
 .p-wall__grid {
     position: absolute;
