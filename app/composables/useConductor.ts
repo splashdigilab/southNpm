@@ -255,6 +255,7 @@ function buildIdleBag(
 export function useConductor() {
     const { $firestore } = useNuxtApp()
     const db = $firestore as any
+    const { cn } = useDbEnv()
     const { moveToHistory } = useFirestore()
     const s = getSingleton()
 
@@ -280,7 +281,7 @@ export function useConductor() {
 
         // 1) 從 queue_history 載入最多 gridMax 張並監聽遠端刪除
         const q = query(
-            collection(db, 'queue_history'),
+            collection(db, cn('queue_history')),
             orderBy('playedAt', 'desc'),
             limit(s.gridMax)
         )
@@ -370,7 +371,7 @@ export function useConductor() {
 
         // 2) 即時監聽 queue_pending
         const pq = query(
-            collection(db, 'queue_pending'),
+            collection(db, cn('queue_pending')),
             orderBy('timestamp', 'asc')
         )
         s.unsubPending = onSnapshot(pq, snap => {
@@ -643,7 +644,7 @@ export function useConductor() {
             updated_at: Date.now()
         }
         try {
-            setDoc(doc(db, 'system', 'current_state'), payload)
+            setDoc(doc(db, cn('system'), 'current_state'), payload)
                 .catch(e => console.error('[Conductor] broadcast', e))
         } catch (e) { console.error(e) }
     }
@@ -652,7 +653,7 @@ export function useConductor() {
     const startListeningState = () => {
         if (s.unsubState) return
         s.unsubState = onSnapshot(
-            doc(db, 'system', 'current_state'),
+            doc(db, cn('system'), 'current_state'),
             snap => {
                 if (!snap.exists()) return
                 const d = snap.data() as CurrentStateData

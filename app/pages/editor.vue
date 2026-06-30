@@ -414,7 +414,8 @@ import StickyNote from '~/components/StickyNote.vue'
 import AppModal from '~/components/AppModal.vue'
 import EditorTutorialModal from '~/components/EditorTutorialModal.vue'
 
-definePageMeta({ ssr: false })
+// alias /editor-test：同一份 component，useDbEnv 偵測到 `-test` 路徑後讀寫 test_* 資料
+definePageMeta({ ssr: false, alias: ['/editor-test'] })
 
 useHead({
   meta: [
@@ -428,6 +429,7 @@ const route = useRoute()
 const router = useRouter()
 const { $firestore } = useNuxtApp()
 const db = $firestore as any
+const { cn } = useDbEnv()
 // 字帖預約：選好字就佔用，讓其他編輯器選不到；離開未送出即釋放，已送出則交給 TTL 回收
 const fontReservation = useFontReservation()
 /**
@@ -564,11 +566,11 @@ const getUsedFonts = async (): Promise<Set<string>> => {
       new Promise<T>((_, reject) => setTimeout(() => reject(new Error('timeout')), ms))
     ])
 
-  const pendingQ = query(collection(db, 'queue_pending'), limit(WALL_CAPACITY))
+  const pendingQ = query(collection(db, cn('queue_pending')), limit(WALL_CAPACITY))
 
   // 第一段：輕量來源（current_state 廣播 + 待播佇列）。allSettled：任一失敗不影響其他來源。
   const [stateRes, pendingRes] = await Promise.allSettled([
-    withTimeout(getDoc(doc(db, 'system', 'current_state'))),
+    withTimeout(getDoc(doc(db, cn('system'), 'current_state'))),
     withTimeout(getDocs(pendingQ))
   ])
 
@@ -612,12 +614,14 @@ const getUsedFonts = async (): Promise<Set<string>> => {
   if (!liveGridAvailable) {
     diagSource = 'history-fallback'
     const historyQ = query(
-      collection(db, 'queue_history'),
+      collection(db, cn('queue_history')),
       orderBy('playedAt', 'desc'),
       limit(WALL_CAPACITY)
     )
     try {
-      const historySnap = await withTimeout(getDocs(historyQ))
+      // 後備是「重量級」讀取（queue_history 可達數 MB）且失敗就會擋住進場（非權威 → 暫無可用），
+      // 故給它較寬的 timeout，讓牆機壅塞時也有機會讀成功變成權威來源，減少誤跳「暫無可用」。
+      const historySnap = await withTimeout(getDocs(historyQ), 9000)
       collectFonts(historySnap.docs, true)
       authoritative = true // 成功讀到權威來源 queue_history（即使空的，也代表牆上目前沒字）
     } catch (e) {
@@ -721,8 +725,20 @@ const autoSelectFont = async (): Promise<string | null> => {
   // used 可能殘缺甚至空集合。此時若照樣選字，極可能挑到牆上其實已有的字（含較早寫、預約早已過期的字）。
   // 寧可回報「暫無可用」讓使用者稍後重試，也不要帶著沒把握的字進場 ——「連續上傳造成讀取逾時而撞到舊字」
   // 主要就是被這道關卡擋下（onStartClick 接到 null 會顯示「正在準備新稿紙」）。
+  //
+  // 但「偶發一次讀取失敗（timeout／弱網）」不該等同「牆滿」：先短暫重試幾次最新牆況，
+  // 仍完全拿不到任一權威來源才放棄。安全性不變（最終仍以 lastWallReadAuthoritative 把關），
+  // 只是把「牆其實有空位、只是這一刻沒讀到」而誤跳「暫無可用」的情況大幅減少。
+  for (let retry = 0; !lastWallReadAuthoritative && retry < 2; retry++) {
+    await new Promise(res => setTimeout(res, 600))
+    invalidateUsedFontsCache()
+    ;[used, reserved] = await Promise.all([
+      getUsedFonts(),
+      fontReservation.getReservedFonts()
+    ])
+  }
   if (!lastWallReadAuthoritative) {
-    console.warn('[Editor] 進場讀取牆況不可靠，暫不選字以免撞到牆上已有的字')
+    console.warn('[Editor] 進場讀取牆況不可靠（已重試仍失敗），暫不選字以免撞到牆上已有的字')
     return null
   }
 
@@ -1345,7 +1361,7 @@ const validateGeoFenceBeforeSubmit = async (): Promise<boolean> => {
 
   let geoFenceSnap
   try {
-    geoFenceSnap = await getDoc(doc(db, 'system', 'editor_geo_fence'))
+    geoFenceSnap = await getDoc(doc(db, cn('system'), 'editor_geo_fence'))
   } catch (error: any) {
     throw createGeoError('geo-fence-fetch-failed', error?.message || 'Failed to load geo fence config', error)
   }
@@ -1494,7 +1510,7 @@ const confirmSubmit = async () => {
       resetEditorToInitial()
       activeTab.value = 'draw'
       showAlert(
-        '你描的這個字剛好已經出現在大螢幕上了，已幫你換上一張新的字帖。<br>畫面已清空，請依新的描紅重新描寫後，再按一次送出喔！',
+        '你描的這個字剛好被其他人選走、即將出現在大螢幕上了，已幫你換上一張新的字帖。<br>畫面已清空，請依新的描紅重新描寫後，再按一次送出喔！',
         '字帖已更換',
         '✍️'
       )
@@ -1805,7 +1821,7 @@ onMounted(async () => {
   }
 
   // Token 驗證預設關閉；若後台有設定，則即時跟隨後台開關。
-  unsubTokenRequirement = onSnapshot(doc(db, 'system', 'editor_token_requirement'), (snap) => {
+  unsubTokenRequirement = onSnapshot(doc(db, cn('system'), 'editor_token_requirement'), (snap) => {
     if (!snap.exists()) {
       tokenRequiredForSubmit.value = false
       return

@@ -33,6 +33,7 @@ definePageMeta({ layout: false })
 
 const { $firestore } = useNuxtApp()
 const db = $firestore as any
+const { cn } = useDbEnv()
 
 const activeToken = ref<string | null>(null)
 const expiresAt = ref<number | null>(null)
@@ -82,7 +83,7 @@ const renderQRCode = async () => {
 }
 
 onMounted(() => {
-  unsub = onSnapshot(doc(db, 'system', 'active_token'), (snap) => {
+  unsub = onSnapshot(doc(db, cn('system'), 'active_token'), (snap) => {
     if (snap.exists()) {
       const data = snap.data()
       // If token is explicitly set to null/cleared remotely, reset state

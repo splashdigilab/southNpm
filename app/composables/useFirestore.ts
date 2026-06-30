@@ -28,6 +28,7 @@ import type {
 export const useFirestore = () => {
   const { $firestore } = useNuxtApp()
   const db = $firestore as any
+  const { cn } = useDbEnv()
 
   /**
    * 移除物件中的 undefined 欄位（Firestore 不接受 undefined）
@@ -62,8 +63,8 @@ export const useFirestore = () => {
           status: 'waiting'
         }
 
-        const pendingRef = doc(db, 'queue_pending', resolvedToken)
-        const tokenRef = doc(db, 'tokens', resolvedToken)
+        const pendingRef = doc(db, cn('queue_pending'), resolvedToken)
+        const tokenRef = doc(db, cn('tokens'), resolvedToken)
 
         await runTransaction(db, async (transaction) => {
           // 先讀取 token 確保狀態
@@ -89,7 +90,7 @@ export const useFirestore = () => {
         return await createNoteWithToken(token)
       }
 
-      const pendingRef = doc(collection(db, 'queue_pending'))
+      const pendingRef = doc(collection(db, cn('queue_pending')))
       try {
         await setDoc(pendingRef, {
           content: form.content,
@@ -108,7 +109,7 @@ export const useFirestore = () => {
         // 當後端 Rules 仍強制 token 寫入時，自動建立內部 token 後重送，
         // 讓前端在「不需 token」模式下仍可正常上傳。
         try {
-          const autoTokenRef = await addDoc(collection(db, 'tokens'), {
+          const autoTokenRef = await addDoc(collection(db, cn('tokens')), {
             status: 'unused',
             createdAt: serverTimestamp()
           })
@@ -136,7 +137,7 @@ export const useFirestore = () => {
     callback: (items: QueuePendingItem[]) => void
   ): Unsubscribe => {
     const q = query(
-      collection(db, 'queue_pending'),
+      collection(db, cn('queue_pending')),
       orderBy('timestamp', 'asc')
     )
 
@@ -174,7 +175,7 @@ export const useFirestore = () => {
     onRemovedIds?: (ids: string[]) => void
   ): Unsubscribe => {
     const q = query(
-      collection(db, 'queue_history'),
+      collection(db, cn('queue_history')),
       orderBy('playedAt', 'desc'),
       limit(pageSize)
     )
@@ -208,7 +209,7 @@ export const useFirestore = () => {
             for (const orphanId of orphanIds) {
               if (orphanId) {
                 console.warn(`[listenToHistory] Self-healing: deleting orphan ${orphanId} (token=${token})`)
-                deleteDoc(doc(db, 'queue_history', orphanId)).catch(() => { })
+                deleteDoc(doc(db, cn('queue_history'), orphanId)).catch(() => { })
               }
             }
           }
@@ -234,7 +235,7 @@ export const useFirestore = () => {
     const startOfToday = new Date(parseInt(todayParams[0] || '0'), parseInt(todayParams[1] || '0') - 1, parseInt(todayParams[2] || '0'), 0, 0, 0, 0)
 
     const q = query(
-      collection(db, 'queue_history'),
+      collection(db, cn('queue_history')),
       where('playedAt', '>=', startOfToday),
       orderBy('playedAt', 'desc')
     )
@@ -266,7 +267,7 @@ export const useFirestore = () => {
   }> => {
     try {
       let q = query(
-        collection(db, 'queue_history'),
+        collection(db, cn('queue_history')),
         orderBy('playedAt', 'desc'),
         limit(pageSize)
       )
@@ -300,7 +301,7 @@ export const useFirestore = () => {
     if (!token) return 0
     try {
       const dupQuery = query(
-        collection(db, 'queue_history'),
+        collection(db, cn('queue_history')),
         where('token', '==', token)
       )
       const dupSnap = await getDocs(dupQuery)
@@ -309,7 +310,7 @@ export const useFirestore = () => {
       const orphans = dupSnap.docs.filter(d => d.id !== token)
       if (orphans.length > 0) {
         await Promise.all(
-          orphans.map(d => deleteDoc(doc(db, 'queue_history', d.id)))
+          orphans.map(d => deleteDoc(doc(db, cn('queue_history'), d.id)))
         )
         console.warn(`[cleanupDuplicateHistory] Deleted ${orphans.length} orphan(s) for token: ${token}`)
       }
@@ -333,8 +334,8 @@ export const useFirestore = () => {
       if (!item.id) throw new Error('Item ID is required')
 
       const token = item.token || item.id
-      const pendingRef = doc(db, 'queue_pending', item.id)
-      const historyRef = doc(db, 'queue_history', token)
+      const pendingRef = doc(db, cn('queue_pending'), item.id)
+      const historyRef = doc(db, cn('queue_history'), token)
 
       console.log(`[moveToHistory] START token=${token}, pendingId=${item.id}`)
 
@@ -387,7 +388,7 @@ export const useFirestore = () => {
    */
   const checkTokenStatus = async (token: string): Promise<'valid' | 'expired' | 'used' | 'invalid'> => {
     try {
-      const tokenSnap = await getDoc(doc(db, 'tokens', token))
+      const tokenSnap = await getDoc(doc(db, cn('tokens'), token))
       if (!tokenSnap.exists()) return 'invalid'
       const data = tokenSnap.data() as TokenDocument
       if (data.status !== 'unused') return 'used'
@@ -431,7 +432,7 @@ export const useFirestore = () => {
         createdAt: serverTimestamp() as any
       }
 
-      const docRef = await addDoc(collection(db, 'tokens'), tokenData)
+      const docRef = await addDoc(collection(db, cn('tokens')), tokenData)
       return docRef.id
     } catch (error) {
       console.error('Error creating token:', error)

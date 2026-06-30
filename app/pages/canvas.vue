@@ -355,7 +355,8 @@ import {
 import { TEST_FONT_COUNT, TEST_MODE } from '~/data/fonts'
 import type { QueueHistoryItem, QueuePendingItem } from '~/types'
 
-definePageMeta({ layout: false })
+// alias /canvas-test：同一份 component，useDbEnv 偵測到 `-test` 路徑後讀寫 test_* 資料
+definePageMeta({ layout: false, alias: ['/canvas-test'] })
 
 type Note = QueueHistoryItem | QueuePendingItem
 
@@ -376,6 +377,7 @@ const RESET_TEXT_HOLD_MS = 9000
 /* ─── Firestore ─── */
 const { $firestore } = useNuxtApp()
 const db = $firestore as any
+const { cn } = useDbEnv()
 const { listenToHistory, listenToPendingQueue, moveToHistory } = useFirestore()
 
 // 以穩定的 token 當識別（doc id 會因 self-healing 刪孤兒／去重而改變，會害同一張被當成新字重播）
@@ -705,7 +707,7 @@ const wait = (ms: number) =>
  */
 async function clearAllReservations() {
   try {
-    const snap = await getDocs(collection(db, 'font_reservations'))
+    const snap = await getDocs(collection(db, cn('font_reservations')))
     await Promise.all(snap.docs.map(d => deleteDoc(d.ref).catch(() => {})))
   } catch (e) {
     console.debug('[wall] 清空字帖預約失敗，交給 TTL 回收', e)
@@ -722,7 +724,7 @@ async function markHistoryCleared(notes: Note[]) {
     notes.map(n => {
       const id = n?.id
       if (!id) return Promise.resolve()
-      return setDoc(doc(db, 'queue_history', id), { cleared: true }, { merge: true }).catch(() => {})
+      return setDoc(doc(db, cn('queue_history'), id), { cleared: true }, { merge: true }).catch(() => {})
     })
   )
 }
@@ -739,7 +741,7 @@ async function markHistoryCleared(notes: Note[]) {
 async function clearBoardBeforeReveal() {
   try {
     const snap = await getDocs(
-      query(collection(db, 'queue_history'), orderBy('playedAt', 'desc'), limit(TOTAL_CELLS))
+      query(collection(db, cn('queue_history')), orderBy('playedAt', 'desc'), limit(TOTAL_CELLS))
     )
     const notes = snap.docs.map(d => ({ id: d.id, ...d.data() }) as Note)
     if (!notes.length) return
@@ -904,7 +906,7 @@ async function handleRemovedHistoryIds(ids: string[]) {
   let changed = false
   for (const id of ids) {
     try {
-      const snap = await getDoc(doc(db, 'queue_history', id))
+      const snap = await getDoc(doc(db, cn('queue_history'), id))
       if (snap.exists()) continue // 文件還在，只是離開視窗 → 牆面不動
     } catch {
       continue // 確認失敗就保守不動，避免誤刪牆上的字
@@ -1017,7 +1019,7 @@ function broadcastState() {
   // 一律標記讓編輯器擋住進場、顯示「準備新稿紙」，而非讀到開場期間的空/舊牆況而撞字。
   // 揭幕完成（introPhase === 'done'）後此值回到 resetInProgress，編輯器即解除。
   const introPreparing = introMode.value && introPhase.value !== 'done'
-  setDoc(doc(db, 'system', 'current_state'), {
+  setDoc(doc(db, cn('system'), 'current_state'), {
     mode: live.length ? 'live' : 'idle',
     now_playing: null,
     live_grid,
@@ -1326,13 +1328,13 @@ onMounted(async () => {
   }
 
   try {
-    const initialSnap = await getDoc(doc(db, 'system', 'canvas_video'))
+    const initialSnap = await getDoc(doc(db, cn('system'), 'canvas_video'))
     applyCanvasVideoConfig(initialSnap.exists() ? (initialSnap.data() as any) : undefined)
   } catch (e) {
     console.warn('[wall] 讀取初始插播設定失敗', e)
   }
 
-  unsubCanvasVideo = onSnapshot(doc(db, 'system', 'canvas_video'), (snap) => {
+  unsubCanvasVideo = onSnapshot(doc(db, cn('system'), 'canvas_video'), (snap) => {
     applyCanvasVideoConfig(snap.exists() ? (snap.data() as any) : undefined)
     if (interstitialScheduleEnabled.value && interstitialSrc.value) {
       void preloadVideo(interstitialSrc.value).catch(() => {})

@@ -1,0 +1,114 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ===== Admin（Email 白名單）=====
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.token.email in [
+          "splash.digilab@gmail.com",
+          "abc@gmail.com",
+        ];
+    }
+
+    // 前台訪客可讀的 system 文件（與專案程式對齊）
+    function isPublicSystemDoc(docId) {
+      return docId in [
+        'editor_token_requirement',
+        'editor_geo_fence',
+        'active_token',
+        'canvas_video',
+        'current_state'
+      ];
+    }
+
+    // ===== Token 驗證（30 分鐘有效）=====
+    function isValidTokenForCreate(tokenId, newData) {
+      let sameToken = newData.token == tokenId;
+      let tokenPath = /databases/$(database)/documents/tokens/$(tokenId);
+      return sameToken
+        && exists(tokenPath)
+        && get(tokenPath).data.status == "unused"
+        && request.time <= get(tokenPath).data.createdAt + duration.value(1800, 's');
+    }
+
+    // ===== queue_pending =====
+    match /queue_pending/{tokenId} {
+      allow read: if true; // 前台「等待中」頁需要讀佇列數量
+      allow create: if isValidTokenForCreate(tokenId, request.resource.data);
+      allow update, delete: if isAdmin();
+    }
+
+    // ===== queue_history =====
+    match /queue_history/{id} {
+      allow read: if true;
+      allow write: if isAdmin();
+    }
+
+    // ===== tokens =====
+    match /tokens/{id} {
+      allow read: if true;
+
+      // Admin 或訪客自動建 token（僅允許新建為 unused）
+      allow create: if isAdmin() || (
+        request.resource.data.status == 'unused'
+      );
+
+      allow delete: if isAdmin();
+
+      allow update: if isAdmin() || (
+        resource.data.status == "unused"
+        && request.resource.data.status == "used"
+      );
+    }
+
+    // ===== system =====
+    match /system/{docId} {
+      allow read: if isPublicSystemDoc(docId) || isAdmin();
+      allow write: if isAdmin();
+    }
+
+    // ===== font_reservations（字帖預約：前台訪客可讀寫，doc id = 字帖 id）=====
+    match /font_reservations/{font} {
+      // 預約資料格式檢查：doc id 必須等於 font 欄位，且必備欄位齊全
+      function isValidReservation() {
+        return request.resource.data.font == font
+          && request.resource.data.font is string
+          && request.resource.data.owner is string
+          && request.resource.data.expiresAt is number;
+      }
+
+      // 所有人可讀（編輯器要讀別人的預約來避字）
+      allow read: if true;
+
+      // 新建預約：格式正確即可
+      allow create: if isAdmin() || isValidReservation();
+
+      // 搶佔／續約：格式正確，且不可搶走「別人仍在有效期內」的預約
+      //（同一 owner 可續約；對方預約已過期才可被別人接手）
+      allow update: if isAdmin() || (
+        isValidReservation()
+        && (
+          resource.data.owner == request.resource.data.owner
+          || resource.data.expiresAt <= request.time.toMillis()
+        )
+      );
+
+      // 釋放：允許刪除（送出/離開時還回去）
+      allow delete: if true;
+    }
+
+    // ===== 測試沙盒（test_ 前綴）=====
+    // /canvas-test、/editor-test 用的隔離資料：test_queue_pending、test_queue_history、
+    // test_tokens、test_font_reservations、test_system 等，一律開放讀寫。
+    // 這只是給 bug 測試用的拋棄式資料，不碰任何正式 collection（名稱不符 test_.* 就不放行）。
+    // 規則是「加法」的：這段只會「多放行」test_ 開頭的，不影響上面任何正式規則。
+    match /{testCol}/{docId=**} {
+      allow read, write: if testCol.matches('test_.*');
+    }
+
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}

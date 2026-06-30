@@ -27,7 +27,10 @@ import {
  * 預約的有效期 expiresAt 一律設為 lastActivityAt + 此值，所以即使分頁一直開著，
  * 只要使用者停止操作超過這段時間，該字就會釋放回可選池（解決「開著不關永遠佔字」）。
  */
-const RESERVATION_TTL_MS = 1 * 60_000
+// 3 分鐘：原本 60 秒對「慢慢寫字／盯著預覽看」的使用者太短，預約會在書寫途中過期被別人搶走，
+// 送出時 claimFont 搶不回原字而誤跳「字帖已更換」。3 分鐘給足書寫時間，又仍會自動釋放閒置太久的字
+//（續約間隔 HEARTBEAT_MS=30s 仍遠小於它，書寫中的人不受影響）。
+const RESERVATION_TTL_MS = 3 * 60_000
 /** 續約間隔：須明顯小於 TTL，確保正在書寫的人不會被誤回收（毫秒） */
 const HEARTBEAT_MS = 0.5 * 60_000
 /**
@@ -51,6 +54,7 @@ const RESERVATION_COL = 'font_reservations'
 export const useFontReservation = () => {
   const { $firestore } = useNuxtApp()
   const db = $firestore as any
+  const { cn } = useDbEnv()
 
   // 本編輯器分頁的擁有者識別（重新整理就換一個，舊的交給 TTL 回收）
   const owner =
@@ -107,7 +111,7 @@ export const useFontReservation = () => {
   const getReservedFonts = async (): Promise<Set<string>> => {
     const out = new Set<string>()
     try {
-      const snap = await getDocs(collection(db, RESERVATION_COL))
+      const snap = await getDocs(collection(db, cn(RESERVATION_COL)))
       const now = Date.now()
       snap.forEach((d) => {
         const data = d.data() as { owner?: string; font?: string; expiresAt?: number }
@@ -129,7 +133,7 @@ export const useFontReservation = () => {
     for (const font of candidates) {
       try {
         const ok = await runTransaction(db, async (tx) => {
-          const ref = doc(db, RESERVATION_COL, font)
+          const ref = doc(db, cn(RESERVATION_COL), font)
           const snap = await tx.get(ref)
           const now = Date.now()
           if (snap.exists()) {
@@ -164,7 +168,7 @@ export const useFontReservation = () => {
     currentFont = null
     try {
       await runTransaction(db, async (tx) => {
-        const ref = doc(db, RESERVATION_COL, font)
+        const ref = doc(db, cn(RESERVATION_COL), font)
         const snap = await tx.get(ref)
         if (snap.exists() && (snap.data() as { owner?: string }).owner === owner) tx.delete(ref)
       })
@@ -181,7 +185,7 @@ export const useFontReservation = () => {
     const font = currentFont
     if (!font) return
     currentFont = null
-    deleteDoc(doc(db, RESERVATION_COL, font)).catch(() => {})
+    deleteDoc(doc(db, cn(RESERVATION_COL), font)).catch(() => {})
   }
 
   /**
@@ -197,7 +201,7 @@ export const useFontReservation = () => {
     // 記錄為「本分頁剛交棒」：同分頁在過渡窗內若再選字，autoSelect 會排除它，避免又挑回而撞字
     recentlyHandedOff.set(font, Date.now() + HANDOFF_GRACE_MS)
     try {
-      await setDoc(doc(db, RESERVATION_COL, font), {
+      await setDoc(doc(db, cn(RESERVATION_COL), font), {
         owner,
         font,
         expiresAt: Date.now() + HANDOFF_GRACE_MS
@@ -221,7 +225,7 @@ export const useFontReservation = () => {
     if (Date.now() - lastActivityAt >= RESERVATION_TTL_MS) return
     try {
       await runTransaction(db, async (tx) => {
-        const ref = doc(db, RESERVATION_COL, font)
+        const ref = doc(db, cn(RESERVATION_COL), font)
         const snap = await tx.get(ref)
         if (snap.exists()) {
           const d = snap.data() as { owner?: string; expiresAt?: number }

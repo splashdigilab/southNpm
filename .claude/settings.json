@@ -61,12 +61,22 @@
       "Bash(ls -la /tmp/vegetable-3.svg.png)",
       "Bash(qlmanage -t -s 400 -o /tmp /Users/kevin/Documents/Github/southNpm/public/vegetable-1.svg)",
       "Bash(qlmanage -t -s 400 -o /tmp /Users/kevin/Documents/Github/southNpm/public/vegetable-2.svg)",
-      "Bash(df -h /tmp 2>&1 | tail -2; rm -rf /private/tmp/claude-501/*/tasks/*.output 2>/dev/null; echo \"cleaned\")"
+      "Bash(df -h /tmp 2>&1 | tail -2; rm -rf /private/tmp/claude-501/*/tasks/*.output 2>/dev/null; echo \"cleaned\")",
+      "Bash(grep -iA15 \"runtimeConfig\\\\|firebase\\\\|env\")",
+      "Bash(grep -rn 'collection\\(db\\\\|collection\\($firestore\\\\|collection\\(' app/composables/useFirestore.ts)",
+      "Bash(grep -n \"TEST_MODE\" app/data/fonts.ts; echo \"---\"; sed -n '/TEST_MODE/,+3p' app/data/fonts.ts | head -10)",
+      "Bash(grep -nE 'const db = |\\\\$firestore' app/composables/useFirestore.ts app/composables/useConductor.ts app/composables/useFontReservation.ts app/pages/canvas.vue app/pages/editor.vue app/pages/qrcode.vue)",
+      "Bash(perl -pi -e \"s/\\\\bdb,\\\\s*RESERVATION_COL\\\\b/db, cn\\(RESERVATION_COL\\)/g\" app/composables/useFontReservation.ts)",
+      "Bash(npx nuxt *)",
+      "Bash(echo \"tsc exit: $?\")",
+      "Bash(grep -nB2 -A6 \"tokenRequiredForSubmit.value =\" app/pages/editor.vue)",
+      "Bash(firebase login:list)"
     ],
     "additionalDirectories": [
       "/Users/kevin/Documents/Github/southNpm/app/composables",
       "/Users/kevin/Documents/Github/southNpm/app/assets/scss/pages",
-      "/private/tmp/claude-501/*/tasks"
+      "/private/tmp/claude-501/*/tasks",
+      "/Users/kevin/Documents/Github/southNpm/app/data"
     ]
   }
 }

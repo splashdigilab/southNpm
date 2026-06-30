@@ -15,6 +15,7 @@ export default defineNuxtConfig({
   // hydration mismatch；直接關閉該頁 SSR。
   routeRules: {
     '/canvas': { ssr: false },
+    '/canvas-test': { ssr: false },
   },
 
   css: [
